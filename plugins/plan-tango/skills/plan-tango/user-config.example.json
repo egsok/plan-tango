@@ -1,0 +1,26 @@
+{
+  "model": null,
+  "effort": "high",
+  "max_iter": 6,
+  "thread_mode": "continue",
+  "final_check": "auto",
+  "lenient": false,
+  "service_tier": null,
+  "codex_profile": null,
+  "extra_codex_config": [],
+  "quiet": false,
+  "severity_aware": true,
+
+  "_README": "Copy this file to ~/.claude/plan-tango/config.json and edit. CLI flags ALWAYS override these values. Validation runs on load — invalid values cause /plan-tango to abort with a clear error.",
+  "_comment_model": "Codex model name (e.g. gpt-5.5, gpt-5.3-codex-spark). null = let Codex choose its own default from ~/.codex/config.toml.",
+  "_comment_effort": "Reasoning effort: none | minimal | low | medium | high | xhigh. Lower = faster + cheaper. Default high.",
+  "_comment_max_iter": "Default iteration cap (1..12). Hard cap is 12 — config can not exceed it. Continue-prompt may raise it up to 12 mid-run.",
+  "_comment_thread_mode": "continue (default) — first iteration opens a Codex thread, later iterations resume it (cheaper, faster, cleaner Codex panel; uses an explicit reset-prompt at iter >= 2 to limit anchor bias). fresh — each iteration is an independent thread (use --fresh-each to override per-run).",
+  "_comment_final_check": "auto | never | force. auto: SKILL gating decides; never: skip Opus final-check; force: always run final-check.",
+  "_comment_lenient": "true = stop on no critical/major instead of strict ALLOW.",
+  "_comment_service_tier": "null | fast | flex. fast = OpenAI priority processing tier (~1.5x speed, +$). Requires features.fast_mode=true in ~/.codex/config.toml (default in current Codex CLI).",
+  "_comment_codex_profile": "Name of a [profiles.<name>] section in ~/.codex/config.toml. Loaded BEFORE per-call -c overrides; canonical config (effort, service_tier, model) still wins on conflict.",
+  "_comment_extra_codex_config": "Array of literal '-c key=value' strings, applied AFTER profile but BEFORE canonical fields. Use for codex flags plan-tango does not surface natively. Managed keys (model_reasoning_effort, service_tier, model) here are silently overridden by the canonical fields above.",
+  "_comment_quiet": "true = suppress per-iteration progress lines (snapshot/spawn/apply prints in Phase C). Phase E final report (stats + convergence table + caught-and-fixed list + narrative) is ALWAYS printed regardless of this flag — quiet mutes only iteration-level chatter, not the final summary. Bash IN/OUT panels are rendered by Claude Code itself and unaffected by this flag.",
+  "_comment_severity_aware": "true (default) = stop on polish-only verdicts (BLOCK with only minor/nit findings, zero critical/major) without running another corrective iter; sets status=converged-with-polish (or converged-lenient if --lenient also set), populates state.polish_advisory, lists findings as advisory in §6 of the Phase E report. false = revert to legacy behavior (always run corrective iter on any BLOCK)."
+}
