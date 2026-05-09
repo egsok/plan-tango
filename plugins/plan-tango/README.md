@@ -284,6 +284,37 @@ Write(~/.claude/plans/*-tango.workspace/**)
 
 После первого прогона запусти `/fewer-permission-prompts` — он добавит allowlist в `~/.claude/settings.json`, и дальше прогоны будут без вопросов.
 
+### Plan mode + paths под `~/.claude/plans/` (важно)
+
+В **plan mode** Claude Code применяет дополнительные ограничения: даже при `defaultMode: "acceptEdits"` и `skipAutoPermissionPrompt: true` любой `Edit`/`Write` на путь **вне текущего VS Code workspace folder ИЛИ вне `permissions.additionalDirectories`** требует approval prompt. Опция «Yes, allow all edits this session» в plan mode действует только на конкретный файл — следующий Write на другой файл снова прокидывает prompt.
+
+Скилл пишет state/ledger/snapshot/workspace files под `~/.claude/plans/<slug>-tango.*`, что **обычно вне твоего рабочего workspace** (например, при работе из `D:\dev\my-project\` пути под `C:\Users\<you>\.claude\plans\` чужие). В plan mode это даёт по 5–10+ approval prompts за один прогон.
+
+**One-time fix** в `~/.claude/settings.json` → `permissions`:
+
+```json
+{
+  "permissions": {
+    "additionalDirectories": ["~/.claude/plans"],
+    "allow": [
+      "Edit(~/.claude/plans/**)",
+      "Write(~/.claude/plans/**)",
+      "Read(~/.claude/plans/**)"
+    ],
+    "defaultMode": "acceptEdits"
+  }
+}
+```
+
+**Почему это нужно отдельно от обычного allowlist:**
+- `additionalDirectories` расширяет scope `acceptEdits` за пределы workspace — **необходимо** для путей под `~/.claude/`, которые иначе попадают под protected-paths policy.
+- `Edit(...)` rules покрывают built-in file-editing tools в целом — **важнее** чем `Write(...)`. Указывай оба для надёжности.
+- Tilde-форма (`~/.claude/plans/**`) работает кросс-платформенно. Windows-форма `Edit(C:\\Users\\<you>\\.claude\\plans\\**)` — fallback, если tilde не resolve'ится.
+
+После применения patch'а перезапуск Claude Code сессии **не нужен** — settings подхватываются на следующий tool call.
+
+**Альтернатива** (если не хочешь править глобальные settings): запускай `/plan-tango` **вне** plan mode. Plan mode для скилла избыточен — план уже написан, дальше только review loop. Обычный режим с `defaultMode: "acceptEdits"` даёт silent flow без дополнительных настроек.
+
 ## Прерывание и возобновление
 
 **Ctrl+C / прерывание**: state.json остаётся консистентным (обновляется после каждой apply-фазы). Lock остаётся на 30 минут — после этого считается stale и автоматически перехватывается следующим запуском.
