@@ -367,7 +367,8 @@ Write(~/.claude/plans/*-tango.workspace/**)
         ├── user-config.example.json          # образец persistent defaults
         ├── scripts/
         │   ├── load-config.mjs               # CLI flags + user-config + defaults → merged settings
-        │   ├── run-codex-review.mjs          # spawn() codex exec --json (resolves underlying codex.js)
+        │   ├── prepare-iter.mjs              # builds iter{N}.{prompt.md,params.json,last-message.txt} in one Bash call
+        │   ├── run-codex-review.mjs          # spawn() codex exec --json (resolves underlying codex.js); retries empty output once
         │   ├── parse-codex-jsonl.mjs         # JSONL events → session_id + diagnostics
         │   ├── parse-codex-verdict.mjs       # ALLOW/BLOCK + findings parser (text/file/json)
         │   ├── plan-paths.mjs                # validate/newest/list-recent/resolve-repo/hash

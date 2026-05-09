@@ -24,7 +24,7 @@ Works inside plan mode (Read/Edit of plan-file allowed; Bash/Task via permission
 - **Helper scripts** at `${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/`:
   - `plan-paths.mjs` (validate/newest/list-recent/resolve-repo/hash), `workspace.mjs` (ensure/cleanup), `snapshot.mjs`, `lock.mjs` (acquire/refresh/release/inspect), `apply-fixes.mjs` (dry-run classifier → edit_plan + ledger_template + advisory_plan), `parse-codex-jsonl.mjs`, `parse-codex-verdict.mjs`.
   - `load-config.mjs` — merges CLI + config + defaults; emits `{merged, sources, warnings}`.
-  - `build-prompt.mjs`, `build-params.mjs` — deterministic builders for `iter{N}.{prompt.md,params.json}` (steps 13/14).
+  - `prepare-iter.mjs` — single deterministic builder for ALL iter{N} artifacts: `iter{N}.prompt.md`, `iter{N}.params.json`, empty stub `iter{N}.last-message.txt`. Settings come inline via `--state-settings '<json>'` — no per-iter `iter{N}.settings.json` Write needed (step 13).
   - `run-codex-review.mjs` — `codex exec` wrapper (called directly via Bash from step 15). Filters cosmetic rollout-recording stderr (see `references/codex-thread-investigation.md`). Retries `codex_empty_output` once internally before reporting.
 - **Subagent** at `${CLAUDE_PLUGIN_ROOT}/agents/`: `plan-tango:plan-final-checker` (opus, sanity check on converged statuses — Phase D only).
 - **Templates**: `references/review-prompt-template.md`, `references/verdict-contract.md`. Schemas (state, params, ledger, verdict): [references/schemas.md](references/schemas.md).
@@ -91,31 +91,21 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 10b. **Integrity check** (BEFORE snapshot, BEFORE Codex call): compute `current_hash = sha256(plan_path)` via `plan-paths.mjs --hash`. If `!== state.last_known_plan_hash` → BREAK with status=`external-modification`. Print: "Plan modified outside skill since last completed apply (expected {short(last_known)}, got {short(current)}). Skill aborts to avoid clobbering manual edits or competing automation. Inspect snapshots in {plan}.iter*-*.bak and decide whether to re-run from scratch." Skips remaining steps (no Codex call wasted; lock released in Phase E). Protects against IDE edits between iterations, second instances, or any external write.
 11. **Snapshot**: `snapshot.mjs --plan <plan_path> --iter <N>`. **If quiet=false**: Print `[N/max] Snapshot: <result.snapshot>`.
 12. **If quiet=false**: Print `[N/max] Sending to Codex (effort=<effort>, mode=<thread_mode>, tier=<service_tier|standard>, cwd=<repo_root>)...`.
-13. **Build prompt** via `build-prompt.mjs`. Compute `reset_block_flag = (thread_mode === "continue" AND N >= 2 AND state.codex_thread_id !== null)`. Then call:
+13. **Prepare iter artifacts** via `prepare-iter.mjs` (single Bash call replaces legacy `build-prompt.mjs` + `build-params.mjs` + orchestrator-Write of `iter{N}.settings.json`). Build the codex-relevant settings JSON inline from `state.settings` (subset: `effort`, `model`, `service_tier`, `codex_profile`, `extra_codex_config` — orchestrator-only keys excluded). Then call:
     ```bash
-    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/build-prompt.mjs \
-      --template ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/references/review-prompt-template.md \
-      --plan <plan_path> \
-      --repo-evidence <repo_evidence_available> \
-      --reset-block <reset_block_flag> \
-      --out ~/.claude/plans/{slug}-tango.workspace/iter{N}.prompt.md
-    ```
-14. **Build params** via `build-params.mjs`. First the orchestrator writes the codex-relevant settings subset to `iter{N}.settings.json` (see [references/schemas.md](references/schemas.md) for the exact subset; orchestrator-only keys are excluded). Then call:
-    ```bash
-    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/build-params.mjs \
+    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/prepare-iter.mjs \
       --slug <slug> --iter <N> \
+      --plan <plan_path> \
       --repo-root <repo_root> --repo-evidence <repo_evidence_available> \
       --thread-mode <thread_mode> --resume-thread-id <state.codex_thread_id|null> \
-      --prompt-file ~/.claude/plans/{slug}-tango.workspace/iter{N}.prompt.md \
-      --output-last-message-file ~/.claude/plans/{slug}-tango.workspace/iter{N}.last-message.txt \
-      --settings-json ~/.claude/plans/{slug}-tango.workspace/iter{N}.settings.json \
-      --out ~/.claude/plans/{slug}-tango.workspace/iter{N}.params.json
+      --state-settings '<json>' \
+      --workspace ~/.claude/plans/{slug}-tango.workspace \
+      --template ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/references/review-prompt-template.md
     ```
-    The script enforces the resume_thread_id rule (only set when `thread_mode=continue` AND `iter>=2` AND uuid non-null) and rejects orchestrator-only keys defensively.
-    **Pre-create empty output file**: `Write(path=output_last_message_file, content="")`. Wrapper also clears it; doing it here protects against stale data if spawn fails before clear.
+    The script writes ALL three artifacts: `iter{N}.prompt.md` (template-substituted), `iter{N}.params.json` (with `resume_thread_id` rule enforced — only set when `thread_mode=continue` AND `iter>=2` AND uuid non-null; reset_block in prompt gated by the same predicate), and `iter{N}.last-message.txt` (empty stub — wrapper also clears it before spawn). Returns `{ok, prompt_file, params_file, last_message_file, prompt_lines, prompt_bytes, params_bytes}` or `{ok:false, error, detail}`.
 
-14b. **Build-script failure handling**: if either `build-prompt.mjs` or `build-params.mjs` exits non-zero OR returns stdout JSON with `ok:false`:
-    - **Always print** (regardless of quiet): `[N/max] ERROR — build-{prompt|params}.mjs failed: <error>: <detail>`.
+13b. **Build-script failure handling**: if `prepare-iter.mjs` exits non-zero OR returns stdout JSON with `ok:false`:
+    - **Always print** (regardless of quiet): `[N/max] ERROR — prepare-iter.mjs failed: <error>: <detail>`.
     - Append ledger entry with `iteration_kind="normal"`, `action="build_script_failed"`, `note=<error>`.
     - Skip Codex spawn. Set status=`build-failed`, BREAK out of the loop.
     - Phase D pre-gate skips Opus on `build-failed` (status not in converged-* set). Phase E renders normally. Lock release in step 30 fires.

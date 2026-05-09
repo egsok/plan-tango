@@ -1,7 +1,7 @@
 # plan-tango — Schemas
 
 Reference for the JSON shapes the orchestrator and helper scripts read or write.
-SKILL.md links here from Phase B step 8 (state), Phase C step 14 (params), and Phase C step 22 (ledger).
+SKILL.md links here from Phase B step 8 (state), Phase C step 13 (params), and Phase C step 22 (ledger).
 
 ## state.json
 
@@ -51,7 +51,7 @@ Field notes:
 
 ## iter{N}.params.json
 
-Path: `~/.claude/plans/{slug}-tango.workspace/iter{N}.params.json`. Built by `build-params.mjs`. Consumed by `run-codex-review.mjs`.
+Path: `~/.claude/plans/{slug}-tango.workspace/iter{N}.params.json`. Built by `prepare-iter.mjs` (replaces legacy `build-params.mjs`). Consumed by `run-codex-review.mjs`.
 
 ```json
 {
@@ -73,14 +73,15 @@ Path: `~/.claude/plans/{slug}-tango.workspace/iter{N}.params.json`. Built by `bu
 }
 ```
 
-Rules enforced by `build-params.mjs`:
+Rules enforced by `prepare-iter.mjs`:
 - `settings.*` is the codex-relevant subset only. Orchestrator-only keys (`max_iter`, `thread_mode`, `final_check`, `lenient`, `quiet`, `verbose_report`, `severity_aware`) are rejected with an error if passed.
 - Optional keys (`model`, `service_tier`, `codex_profile`, `extra_codex_config` when empty array) are omitted from output when null/empty. `effort` is always included.
-- `resume_thread_id` is set only when ALL three hold: `thread_mode === "continue"` AND `iter >= 2` AND `state.codex_thread_id !== null`. Otherwise `null` — wrapper opens a fresh thread.
+- `resume_thread_id` is set only when ALL three hold: `thread_mode === "continue"` AND `iter >= 2` AND a non-null UUID was passed. Otherwise `null` — wrapper opens a fresh thread.
+- The reset-block (in `iter{N}.prompt.md`) is gated by the same predicate as `resume_thread_id`.
 
-## iter{N}.settings.json (orchestrator-side input to build-params)
+## state.settings codex-relevant subset (passed inline to prepare-iter)
 
-Path: `~/.claude/plans/{slug}-tango.workspace/iter{N}.settings.json`. Tiny hand-written file the orchestrator passes via `--settings-json` to `build-params.mjs`. Subset of `state.settings`:
+The orchestrator passes the subset INLINE via `prepare-iter.mjs --state-settings '<json>'` — there is no per-iter `iter{N}.settings.json` file in v0.2 (commit 5 of the operational-simplification sprint removed the orchestrator Write step):
 
 ```json
 {
