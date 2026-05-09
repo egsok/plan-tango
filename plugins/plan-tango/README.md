@@ -311,7 +311,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
 - `Edit(...)` rules покрывают built-in file-editing tools в целом — **важнее** чем `Write(...)`. Указывай оба для надёжности.
 - Tilde-форма (`~/.claude/plans/**`) работает кросс-платформенно. Windows-форма `Edit(C:\\Users\\<you>\\.claude\\plans\\**)` — fallback, если tilde не resolve'ится.
 
-После применения patch'а перезапуск Claude Code сессии **не нужен** — settings подхватываются на следующий tool call.
+**После применения patch'а нужен рестарт активной Claude Code сессии** — VS Code extension кеширует permissions при старте session, изменения settings.json не подхватываются на лету. Закрой окно VS Code (или re-open workspace) → новая сессия загрузит обновлённые permissions.
 
 **Альтернатива** (если не хочешь править глобальные settings): запускай `/plan-tango` **вне** plan mode. Plan mode для скилла избыточен — план уже написан, дальше только review loop. Обычный режим с `defaultMode: "acceptEdits"` даёт silent flow без дополнительных настроек.
 
