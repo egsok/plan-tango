@@ -1,7 +1,7 @@
 ---
 name: plan-tango
 description: "Auto-converge a Claude-written plan with Codex (gpt-5) review. Loops Codex review → Claude fixes → re-review until clean ALLOW or max-iter. Works inside plan mode on the active plan file. Use when you've drafted a plan and want external AI review without manual copypaste."
-argument-hint: "[plan-path-or-slug] [--max-iter N (default 6, cap 12)] [--effort none|minimal|low|medium|high|xhigh] [--model <m>] [--lenient] [--final-check] [--no-final-check] [--resume] [--takeover] [--quiet] [--verbose-report]"
+argument-hint: "[plan-path-or-slug] [--max-iter N (default 6, cap 12)] [--effort none|minimal|low|medium|high|xhigh] [--model <m>] [--lenient] [--final-check] [--resume] [--takeover] [--quiet] [--verbose-report]"
 allowed-tools:
   - Read
   - Edit
@@ -38,13 +38,13 @@ Args from `$ARGUMENTS`:
 - `--effort none|minimal|low|medium|high|xhigh` (default `high`; `minimal` is rejected by Codex when image_gen/web_search are on — use `low` for fast).
 - `--model <m>` (default unset — Codex picks from `~/.codex/config.toml`).
 - `--lenient` — stop on "no critical/major" instead of strict ALLOW.
-- `--final-check` — opt in to Opus sanity-check on converged statuses (sets `final_check="always"`; mutually exclusive with `--no-final-check`).
+- `--final-check` — opt in to Opus sanity-check on converged statuses (sets `final_check="always"`).
 - `--resume` — resume from saved state for the same slug.
 - `--takeover` — override stale-but-readable lock (corrupt locks always require it).
 - `--quiet` — suppress per-iteration progress in Phase C. Phase A heads-up, Phase B init, ERROR/MALFORMED bullets, ABORT messages, AskUserQuestion prompts, and Phase E final report ALWAYS print.
 - `--verbose-report` — opt in to Phase E §3 (convergence table) + §5 (narrative). Default off; §1+§2+§4 (and §6 when polish_only_terminal) always render.
 
-Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2). Advanced flags — `--continue-thread` / `--fresh-each` (override thread mode), `--service-tier <fast|flex>`, `--fast`, `--codex-profile <name>`, `extra_codex_config` (config field) — are documented in [references/advanced-config.md](references/advanced-config.md). **Deprecated aliases (still work, print warning, removed in v0.3)**: `--no-final-check` (disable override), `--force-final-check` (same as `--final-check`).
+Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2). Advanced flags — `--continue-thread` / `--fresh-each` (override thread mode), `--service-tier <fast|flex>`, `--fast`, `--codex-profile <name>`, `extra_codex_config` (config field) — and the legacy deprecated-alias flags / config values are documented in [references/advanced-config.md](references/advanced-config.md). The loader (`load-config.mjs`) accepts deprecated aliases, migrates them to the canonical setting, and prints a one-line warning per run (orchestrator surfaces these via step 8.5).
 </context>
 
 <process>
@@ -75,9 +75,9 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
    - On `cannot_takeover_fresh_lock` → ABORT (fresh lock, takeover refused).
    - On success → set `lock_acquired = true` (orchestrator-side flag, see step 30). Log if `took_over_stale:true`.
 8. `state_path = ~/.claude/plans/{slug}-tango.state.json`. State shape and field semantics: see [references/schemas.md](references/schemas.md).
-8.5. **Load merged settings** via `load-config.mjs --merge --cli '<json>'`. Orchestrator builds CLI JSON with these keys (using `_` for `-`): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check` (deprecated alias), `force_final_check` (deprecated alias), `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`.
-   - On exit 2 / `error` field present (validation failure or conflict like `--no-final-check + --final-check`) → ABORT with helper's `error`/`detail`. Release the lock acquired in step 7.
-   - On success: parse stdout `{merged, sources, warnings}`. Set `state.settings = merged`, `state.settings_sources = sources`. Verify `state.settings.max_iter ≤ 12` defensively. **Print each `warnings` entry to the user** (deprecation notices). Always print, even with `--quiet`.
+8.5. **Load merged settings** via `load-config.mjs --merge --cli '<json>'`. Orchestrator builds CLI JSON with these keys (using `_` for `-`): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check`, `force_final_check`, `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. Deprecation/migration semantics for the alias keys live in [references/advanced-config.md](references/advanced-config.md); orchestrator just needs to populate the key when the corresponding CLI flag is present.
+   - On exit 2 / `error` field present (validation failure or conflict per loader rules) → ABORT with helper's `error`/`detail`. Release the lock acquired in step 7.
+   - On success: parse stdout `{merged, sources, warnings}`. Set `state.settings = merged`, `state.settings_sources = sources`. Verify `state.settings.max_iter ≤ 12` defensively. **Print each `warnings` entry to the user**. Always print, even with `--quiet`.
    - **Skip-loader bypass** (defensive): if env `PLAN_TANGO_NO_CONFIG_LOADER=1`, skip step 8.5 and apply legacy defaults inline (max_iter=6, effort=high, thread_mode=continue, final_check=never, lenient=false, service_tier=null, codex_profile=null, extra_codex_config=[], quiet=false, verbose_report=false, severity_aware=true; warnings=[]).
 9. **If `--resume`**: load state, compute `current_hash = sha256(plan)`. If `current_hash !== state.last_known_plan_hash` → ABORT: "Plan modified outside skill since last completed iteration (expected {short(last_known)}, got {short(current)}). Re-run without --resume to start fresh." Release the lock per Phase E rules. Otherwise resume from `state.iter + 1`.
 10. **Else (fresh)**: write state with `original_plan_hash = last_known_plan_hash = sha256(plan)`, `iter=0`, settings populated.

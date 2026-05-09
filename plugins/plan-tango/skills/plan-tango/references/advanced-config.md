@@ -115,6 +115,51 @@ canonical settings (effort, model, service_tier) still win on conflict.
 
 The orchestrator sets this automatically when `state.settings.verbose_report === true`. End users normally don't need to pass it directly.
 
+## Deprecated aliases (still work, removal scheduled v0.3)
+
+The loader accepts the following deprecated CLI flags and config values
+as aliases for the canonical v0.2 names. Each one is migrated to the
+canonical value AND triggers a one-line warning per run when first
+encountered. SKILL.md describes only the canonical names; this section
+is the source of truth for the migration window.
+
+### CLI flags
+
+| Deprecated flag                | Migrated to                          | One-line warning |
+|--------------------------------|--------------------------------------|------------------|
+| `--force-final-check`          | `--final-check` (`final_check="always"`) | `[plan-tango] --force-final-check is deprecated; use --final-check instead.` |
+| `--no-final-check`             | `final_check="never"` for this run (overrides config `"always"`) | `[plan-tango] --no-final-check is deprecated; it now sets final_check="never" for this run, overriding config. Will be removed in v0.3.` |
+
+`--no-final-check` is mutually exclusive with `--final-check` /
+`--force-final-check` — if both are present the loader errors with
+`conflicting_flags`.
+
+### Config-file values
+
+| Deprecated config              | Migrated to                          | One-line warning |
+|--------------------------------|--------------------------------------|------------------|
+| `final_check: "auto"`          | `final_check: "never"`               | `[plan-tango] config: final_check="auto" is deprecated; treating as "never" (the new default).` |
+| `final_check: "force"`         | `final_check: "always"`              | `[plan-tango] config: final_check="force" is deprecated; treating as "always".` |
+
+### Precedence rule (CLI > config > default)
+
+`load-config.mjs` produces a single normalized
+`state.settings.final_check ∈ {"always", "never"}` after applying:
+
+1. If `--no-final-check` (alias) is present → `"never"` (CLI wins;
+   warning printed).
+2. Else if `--final-check` (canonical) or `--force-final-check` (alias)
+   is present → `"always"` (CLI wins; warning printed for the
+   deprecated alias).
+3. Else if config `final_check` is set → migrated value (warning
+   printed if old `auto` / `force` was used).
+4. Else → `"never"` (v0.2 default).
+
+Phase D's pre-gate then collapses to: **"if
+`state.settings.final_check === "always"` AND status is converged-* →
+run Opus; else skip"**. The orchestrator never re-inspects raw flags
+or config values at Phase D time.
+
 ## Debugging
 
 | Env var                          | Effect                                              |
