@@ -419,8 +419,18 @@ async function main() {
     return;
   }
 
+  // v0.2 commit 3 (G): retry codex_empty_output once inside the wrapper.
+  // Codex occasionally returns empty output transiently; one extra attempt
+  // resolves most cases without forcing the orchestrator to retry.
+  // Track latest result for stderr/seconds reporting.
+  let stdoutBufLatest = stdoutBuf;
+  let stderrBufLatest = stderrBuf;
+  let secondsLatest = seconds;
+  let attempts = 1;
+  let retriedEmpty = false;
+
   // --- parse JSONL for session_id + diagnostics ---
-  const jsonlResult = await runChildJson(JSONL_PARSER, [], stdoutBuf);
+  const jsonlResult = await runChildJson(JSONL_PARSER, [], stdoutBufLatest);
   let sessionId = null;
   let jsonlAgentText = null;
   if (jsonlResult.ok) {
@@ -444,13 +454,74 @@ async function main() {
   if (!lastMessage.trim() && jsonlAgentText) {
     lastMessage = jsonlAgentText;
   }
+
+  // v0.2 (G): if empty, retry once before erroring out. Use the same
+  // codexArgs (preserving any lost-session fresh fallback already applied).
+  if (!lastMessage.trim()) {
+    attempts = 2;
+    retriedEmpty = true;
+    process.stderr.write(
+      `[plan-tango/run-codex-review] empty output on attempt 1, retrying once\n`
+    );
+    try { writeFileSync(params.output_last_message_file, "", "utf8"); } catch { /* ignore */ }
+    const retryResult = await runCodex(codexArgs, promptText, params.repo_root);
+    if (retryResult.kind === "spawn_failed") {
+      emitError("codex_nonzero_exit", {
+        exit_code: -1,
+        stderr_tail: tail(filterRolloutNoise(retryResult.stderrBuf || ""), 2048),
+        raw_stdout: "",
+        spawn_error: retryResult.error,
+        fallback_to_fresh: fallbackToFresh,
+        attempts,
+        retried_empty: retriedEmpty,
+      });
+      return;
+    }
+    stdoutBufLatest = retryResult.stdoutBuf;
+    stderrBufLatest = retryResult.stderrBuf;
+    secondsLatest = retryResult.seconds;
+    if (retryResult.exit_code !== 0) {
+      emitError("codex_nonzero_exit", {
+        exit_code: retryResult.exit_code,
+        stderr_tail: tail(filterRolloutNoise(stderrBufLatest), 2048),
+        raw_stdout: head(stdoutBufLatest, 4096),
+        codex_seconds: secondsLatest,
+        fallback_to_fresh: fallbackToFresh,
+        attempts,
+        retried_empty: retriedEmpty,
+      });
+      return;
+    }
+    // Re-parse JSONL + read last-message from the retry.
+    const jsonlResult2 = await runChildJson(JSONL_PARSER, [], stdoutBufLatest);
+    if (jsonlResult2.ok) {
+      try {
+        const jsonlOut = JSON.parse(jsonlResult2.stdout);
+        sessionId = jsonlOut.session_id || sessionId;
+        jsonlAgentText = jsonlOut.agent_text || jsonlAgentText;
+      } catch {
+        // non-fatal
+      }
+    }
+    try {
+      lastMessage = readFileSync(params.output_last_message_file, "utf8");
+    } catch {
+      lastMessage = jsonlAgentText || "";
+    }
+    if (!lastMessage.trim() && jsonlAgentText) {
+      lastMessage = jsonlAgentText;
+    }
+  }
+
   if (!lastMessage.trim()) {
     emitError("codex_empty_output", {
-      stderr_tail: tail(filterRolloutNoise(stderrBuf), 2048),
-      codex_seconds: seconds,
+      stderr_tail: tail(filterRolloutNoise(stderrBufLatest), 2048),
+      codex_seconds: secondsLatest,
       session_id: sessionId,
       fallback_to_fresh: fallbackToFresh,
-      raw_output_excerpt: head(stdoutBuf, 1024),
+      attempts,
+      retried_empty: retriedEmpty,
+      raw_output_excerpt: head(stdoutBufLatest, 1024),
     });
     return;
   }
@@ -484,9 +555,11 @@ async function main() {
   parserOut.session_id = sessionId;
   parserOut.fallback_to_fresh = fallbackToFresh;
   parserOut.last_message_path = params.output_last_message_file;
-  parserOut.codex_seconds = seconds;
-  parserOut.codex_stderr_tail = tail(filterRolloutNoise(stderrBuf), 1024);
+  parserOut.codex_seconds = secondsLatest;
+  parserOut.codex_stderr_tail = tail(filterRolloutNoise(stderrBufLatest), 1024);
   parserOut.exit_code = exit_code;
+  parserOut.attempts = attempts;
+  parserOut.retried_empty = retriedEmpty;
   // v0.2: lean output. Drop raw_final_message + skip raw_output_excerpt for
   // clean ALLOW/BLOCK verdicts unless verbose mode requested. Full text
   // available on disk at last_message_path.
@@ -495,7 +568,7 @@ async function main() {
     delete parserOut.raw_final_message;
     // raw_output_excerpt deliberately NOT added in lean path
   } else {
-    parserOut.raw_output_excerpt = head(stdoutBuf, 1024);
+    parserOut.raw_output_excerpt = head(stdoutBufLatest, 1024);
   }
   if (!Array.isArray(parserOut.warnings)) {
     parserOut.warnings = parserOut.parse_warnings || [];
