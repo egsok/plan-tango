@@ -51,6 +51,15 @@ const VERDICT_PARSER = path.join(SCRIPT_DIR, "parse-codex-verdict.mjs");
 const JSONL_PARSER = path.join(SCRIPT_DIR, "parse-codex-jsonl.mjs");
 
 const DEBUG_ENV = "PLAN_TANGO_DEBUG_CODEX_ARGS";
+// v0.2: lean output by default. For ALLOW/BLOCK clean verdicts the wrapper
+// omits `raw_final_message` (full Codex text — already on disk at
+// last_message_path) and `raw_output_excerpt` (head of JSONL stdout). Both
+// are still included for MALFORMED/ERROR (debug-critical) and when verbose
+// mode is requested via --verbose-output flag or PLAN_TANGO_WRAPPER_VERBOSE=1
+// env (used by Phase E §3/§5 verbose-report path).
+const VERBOSE_OUTPUT =
+  process.env.PLAN_TANGO_WRAPPER_VERBOSE === "1" ||
+  process.argv.includes("--verbose-output");
 
 // Resolve the actual codex CLI entry point. On Windows the npm shim is `codex.cmd`,
 // which Node's spawn cannot dispatch without `shell: true`. We bypass the shim entirely
@@ -478,7 +487,16 @@ async function main() {
   parserOut.codex_seconds = seconds;
   parserOut.codex_stderr_tail = tail(filterRolloutNoise(stderrBuf), 1024);
   parserOut.exit_code = exit_code;
-  parserOut.raw_output_excerpt = head(stdoutBuf, 1024);
+  // v0.2: lean output. Drop raw_final_message + skip raw_output_excerpt for
+  // clean ALLOW/BLOCK verdicts unless verbose mode requested. Full text
+  // available on disk at last_message_path.
+  const isCleanVerdict = parserOut.verdict === "ALLOW" || parserOut.verdict === "BLOCK";
+  if (isCleanVerdict && !VERBOSE_OUTPUT) {
+    delete parserOut.raw_final_message;
+    // raw_output_excerpt deliberately NOT added in lean path
+  } else {
+    parserOut.raw_output_excerpt = head(stdoutBuf, 1024);
+  }
   if (!Array.isArray(parserOut.warnings)) {
     parserOut.warnings = parserOut.parse_warnings || [];
   }
