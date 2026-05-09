@@ -25,8 +25,8 @@ Works inside plan mode (Read/Edit of plan-file allowed; Bash/Task via permission
   - `plan-paths.mjs` (validate/newest/list-recent/resolve-repo/hash), `workspace.mjs` (ensure/cleanup), `snapshot.mjs`, `lock.mjs` (acquire/refresh/release/inspect), `apply-fixes.mjs` (dry-run classifier → edit_plan + ledger_template + advisory_plan), `parse-codex-jsonl.mjs`, `parse-codex-verdict.mjs`.
   - `load-config.mjs` — merges CLI + config + defaults; emits `{merged, sources, warnings}`.
   - `build-prompt.mjs`, `build-params.mjs` — deterministic builders for `iter{N}.{prompt.md,params.json}` (steps 13/14).
-  - `run-codex-review.mjs` — `codex exec` wrapper (called via `plan-tango:plan-reviewer` subagent). Filters cosmetic rollout-recording stderr (see `references/codex-thread-investigation.md`).
-- **Subagents** at `${CLAUDE_PLUGIN_ROOT}/agents/`: `plan-tango:plan-reviewer` (sonnet, thin Bash wrapper), `plan-tango:plan-final-checker` (opus, sanity check).
+  - `run-codex-review.mjs` — `codex exec` wrapper (called directly via Bash from step 15). Filters cosmetic rollout-recording stderr (see `references/codex-thread-investigation.md`). Retries `codex_empty_output` once internally before reporting.
+- **Subagent** at `${CLAUDE_PLUGIN_ROOT}/agents/`: `plan-tango:plan-final-checker` (opus, sanity check on converged statuses — Phase D only).
 - **Templates**: `references/review-prompt-template.md`, `references/verdict-contract.md`. Schemas (state, params, ledger, verdict): [references/schemas.md](references/schemas.md).
 </execution_context>
 
@@ -119,7 +119,11 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - Append ledger entry with `iteration_kind="normal"`, `action="build_script_failed"`, `note=<error>`.
     - Skip Codex spawn. Set status=`build-failed`, BREAK out of the loop.
     - Phase D pre-gate skips Opus on `build-failed` (status not in converged-* set). Phase E renders normally. Lock release in step 30 fires.
-15. **Spawn `plan-tango:plan-reviewer`** via Task tool (`subagent_type: "plan-tango:plan-reviewer"`). Pass the absolute path to `iter{N}.params.json` as the only input. Returns the wrapper's stdout verbatim (one JSON object, full verdict shape per [references/schemas.md](references/schemas.md)).
+15. **Run Codex review** via Bash on `run-codex-review.mjs`:
+    ```bash
+    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/run-codex-review.mjs <abs-path-to-iter{N}.params.json>
+    ```
+    Returns one JSON object on stdout (full verdict shape per [references/schemas.md](references/schemas.md)). Wrapper output is lean by default for ALLOW/BLOCK (no `raw_final_message`/`raw_output_excerpt` — full text on disk at `last_message_path`); pass `--verbose-output` (or set `PLAN_TANGO_WRAPPER_VERBOSE=1`) when verbose-report path needs raw fields.
 16. **Parse verdict JSON** from the response. The wrapper returns the full shape — orchestrator does NOT re-parse the verdict text. Print (per-bullet quiet gating):
     - `verdict ∈ {ALLOW, BLOCK}` — **if quiet=false**: `[N/max] {verdict} — {C} critical, {M} major, {m} minor, {n} nit ({Xs}, evidence={true|false})`.
     - `verdict=ERROR` — **always print**: `[N/max] ERROR — reason={reason}, exit_code={ec}`.
@@ -133,7 +137,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 
 17. **If `verdict == ERROR`** (handle BEFORE classification):
     - `reason=codex_nonzero_exit` AND stderr contains `ENOENT|auth|401|not logged in` → ABORT, suggest: "Run `codex login` (or `/codex:setup`) and re-run."
-    - `reason=codex_empty_output` → 1 retry. On retry-empty also → ABORT.
+    - `reason=codex_empty_output` → ABORT (wrapper already retried once internally; `attempts=2`, `retried_empty=true` in the response).
     - `reason=prompt_unreadable` → ABORT (workspace bug; show path).
     - `reason=params_missing|params_unreadable|params_invalid_json|wrapper_exception` → ABORT (skill-internal bug; show JSON).
     - In all cases print stderr_tail and raw_stdout snippet. Skip classification/apply.
@@ -214,7 +218,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
       3. If `manual` or critical/major `deferred` → BREAK status=`manual-required-after-final`.
       4. Reuse off-plan invariant from step 22 (check `requested_file_path !== null`). Failures → BREAK status=`off-plan-target` (ledger `iteration_kind="final-fix"`, `action="off_plan_blocked"`).
       5. Apply fixes (same as step 22 apply); append ledger with `iteration_kind="final-fix"`. Update last_known_plan_hash.
-      6. ONE Codex re-review: spawn `plan-tango:plan-reviewer` again with fresh params.
+      6. ONE Codex re-review: call `run-codex-review.mjs` again with fresh params.
          - ALLOW → BREAK status=`converged-final`.
          - BLOCK → BREAK status=`final-check-divergence` (Opus and Codex disagree). Show both finding sets. Ask user to resolve.
          - ERROR → BREAK status=`final-recheck-error`.

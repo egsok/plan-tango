@@ -16,18 +16,19 @@ There is no code path that constructs a different sandbox value from user input.
 
 If the wrapper is modified in the future, this invariant must remain: any non-`read-only` sandbox value would change the security posture of the whole skill.
 
-## Subagents do not edit the plan file (script-enforced via frontmatter)
+## Subagent does not edit the plan file (script-enforced via frontmatter)
 
-Both subagents declared in `agents/` have their tool list scoped to read-only operations:
+The single remaining subagent declared in `agents/` has its tool list scoped to read-only operations:
 
-| subagent                 | declared `tools`            | Edit/Write present? |
-|--------------------------|-----------------------------|---------------------|
-| `plan-tango:plan-reviewer`     | `Bash, Read`               | NO                  |
-| `plan-tango:plan-final-checker` | `Read, Glob, Grep`        | NO                  |
+| subagent                        | declared `tools`            | Edit/Write present? |
+|---------------------------------|-----------------------------|---------------------|
+| `plan-tango:plan-final-checker` | `Read, Glob, Grep`          | NO                  |
 
-The Claude Code skill runtime enforces the `tools:` frontmatter — a subagent cannot call a tool not in its list. The orchestrator is the only agent in this skill with `Edit` access (declared in SKILL.md `allowed-tools`). All plan modifications go through the orchestrator after parsing the subagent's verdict.
+The Claude Code skill runtime enforces the `tools:` frontmatter — a subagent cannot call a tool not in its list. The orchestrator is the only agent in this skill with `Edit` access (declared in SKILL.md `allowed-tools`). All plan modifications go through the orchestrator after parsing the subagent's (or wrapper's) verdict.
 
-If either subagent file is modified to add `Edit` or `Write`, this invariant is broken and a security review is required.
+If the subagent file is modified to add `Edit` or `Write`, this invariant is broken and a security review is required.
+
+> **v0.2 note**: the former `plan-tango:plan-reviewer` subagent (sonnet, `Bash, Read` only) was removed in commit 4 of the operational-simplification sprint. Codex review now runs via direct Bash call to `run-codex-review.mjs` from the orchestrator — the subagent was a thin forwarder that only added Task-spawn overhead. The wrapper itself does not have `Edit`/`Write` access; it spawns Codex CLI in `--sandbox read-only` mode (see Sandbox invariant above).
 
 ## Style: skill modifies only the plan file
 

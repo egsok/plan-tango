@@ -188,7 +188,7 @@ Phase B. Init
    (lock acquisition is FIRST — protects state files from concurrent overwrite)
 
 Phase C. Loop (max-iter раз)
-   integrity check (sha256) → snapshot → build prompt → spawn plan-reviewer →
+   integrity check (sha256) → snapshot → build prompt → call run-codex-review.mjs →
    handle ERROR/MALFORMED → classify findings → check stop conditions →
    apply fixes via Edit → update last_known_hash → refresh lock
 
@@ -348,7 +348,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
 - Нормально: скилл правит ТОЛЬКО plan-файл. Если finding осмысленный — внеси изменение в код руками отдельно.
 - Если finding некорректный — он будет логирован в ledger как `off_plan_blocked` с `requested_file_path` и `suggested_fix`.
 
-**Ничего не происходит после спавна plan-reviewer** — Codex может думать 30-90 секунд на effort=high. Это норма.
+**Ничего не происходит после вызова run-codex-review.mjs** — Codex может думать 30-90 секунд на effort=high. Это норма.
 
 ## Структура plugin (для разработчика)
 
@@ -361,8 +361,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
     │   └── plugin.json                       # plugin manifest
     ├── README.md                             # этот файл (для пользователя)
     ├── agents/
-    │   ├── plan-reviewer.md                  # sonnet, thin Bash wrapper → registered as plan-tango:plan-reviewer
-    │   └── plan-final-checker.md             # opus, raw ALLOW/BLOCK → registered as plan-tango:plan-final-checker
+    │   └── plan-final-checker.md             # opus, raw ALLOW/BLOCK → registered as plan-tango:plan-final-checker (Phase D only)
     └── skills/plan-tango/
         ├── SKILL.md                          # orchestrator instructions
         ├── user-config.example.json          # образец persistent defaults
