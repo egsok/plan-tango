@@ -24,6 +24,7 @@ Works inside plan mode (Read/Edit of plan-file allowed; Bash/Task via permission
 - **Helper scripts** at `${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/`:
   - `plan-paths.mjs` (validate/newest/list-recent/resolve-repo/hash), `workspace.mjs` (ensure/cleanup), `snapshot.mjs`, `lock.mjs` (acquire/refresh/release/inspect), `apply-fixes.mjs` (dry-run classifier → edit_plan + ledger_template + advisory_plan), `parse-codex-jsonl.mjs`, `parse-codex-verdict.mjs`.
   - `load-config.mjs` — merges CLI + config + defaults; emits `{merged, sources, warnings}`.
+  - `init.mjs` — orchestrates Phase A in one Bash call (validate plan + codex CLI + repo + load-config + lock + state init/resume + workspace ensure). Returns full context bundle for the orchestrator to bind, with internal lock-cleanup on partial failure.
   - `prepare-iter.mjs` — single deterministic builder for ALL iter{N} artifacts: `iter{N}.prompt.md`, `iter{N}.params.json`, empty stub `iter{N}.last-message.txt`. Settings come inline via `--state-settings '<json>'` — no per-iter `iter{N}.settings.json` Write needed (step 13).
   - `run-codex-review.mjs` — `codex exec` wrapper (called directly via Bash from step 15). Filters cosmetic rollout-recording stderr (see `references/codex-thread-investigation.md`). Retries `codex_empty_output` once internally before reporting.
 - **Subagent** at `${CLAUDE_PLUGIN_ROOT}/agents/`: `plan-tango:plan-final-checker` (opus, sanity check on converged statuses — Phase D only).
@@ -49,39 +50,33 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
 
 <process>
 
-# Phase A — Validation
+# Phase A — Init (validate + load + lock + state + workspace)
 
-1. **Resolve plan-path** (priority order):
-   1. Explicit positional arg (normalize: absolute > relative-to-cwd > slug under `~/.claude/plans/`).
-   2. Active plan from system prompt ("Plan File Info" / "plan file at" → path under `~/.claude/plans/`).
+`init.mjs` consolidates Phase A+B (formerly 11 stepped operations) into one Bash call. Internally it composes existing helpers (`plan-paths`, `load-config`, `lock`, `workspace`) — no new logic, just chained orchestration with internal cleanup on failure.
 
-   **Without `--resume`** (fresh): try `plan-paths.mjs --newest`, then AskUserQuestion with `--list-recent 5`.
+1. **Build CLI JSON** from `$ARGUMENTS` into a flat object with these keys (using `_` for `-` per loader contract): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check`, `force_final_check`, `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. See [references/advanced-config.md](references/advanced-config.md) for alias semantics.
+2. **Run init**:
+    ```bash
+    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/init.mjs \
+      --cli '<json>' \
+      [--plan-arg <positional-or-empty>] \
+      [--active-plan <path-from-system-prompt-or-empty>] \
+      [--resume] [--takeover]
+    ```
+    Init resolves plan-path (priority: positional > active-plan > newest under `~/.claude/plans/`; `--resume` disables the newest fallback per Resume-safety invariant), validates the plan (size ≥ 200 bytes, realpath under `~/.claude/plans/`), verifies `codex --version`, resolves repo-root (`repo_evidence_available` is always `true` in v0.2 — old git-required gate retired), loads + validates merged settings, **acquires the lock first**, writes (or loads + hash-checks for resume) `state.json`, and ensures the workspace dir.
 
-   **With `--resume`** (no `--newest` fallback): ABORT with "Cannot --resume without an explicit plan path/slug or active plan. Re-run /plan-tango <slug-or-path> --resume to be unambiguous." Optionally AskUserQuestion listing slugs that have `*-tango.state.json`.
-2. **Validate** via `plan-paths.mjs --validate <path>`. Helper checks existence, size ≥ 200 bytes, realpath under `~/.claude/plans/`. On non-zero exit, ABORT with the helper's `reason`.
-3. **Verify codex CLI**: `codex --version` via Bash. Exit ≠ 0 → ABORT with: "Codex CLI not found on PATH. Install with `npm install -g @openai/codex`, then run `codex login` (or `/codex:setup`). Re-run /plan-tango once codex --version succeeds." Save the version string for state (step 8).
-4. **Resolve repo-root** via `plan-paths.mjs --resolve-repo --cwd <process.cwd> --plan <plan_path>`. Use the returned `repo_root` and `repo_evidence_available`. **v0.2:** `repo_evidence_available` is now ALWAYS `true`. The old git-required gate forced text-only review on legitimate cases (pre-`git init` projects, monorepos with non-git toolchains). With sandbox=read-only and prompt grounding rules, allowing investigation in any cwd is safe.
-5. **Heads-up**: print "Will call Bash(node run-codex-review.mjs) up to {max_iter} times. Allowlist via `/fewer-permission-prompts` if you'll use this often."
+    On stdout one JSON object: success — `{ok:true, slug, plan_path, repo_root, repo_evidence_available, codex_version, settings, settings_sources, warnings, lock_acquired:true, lock_session_id, lock_took_over_stale, state_path, state, is_resume, workspace_path}`. Failure — `{ok:false, abort_reason, error, lock_acquired, lock_session_id?, slug?}`.
+3. **On `ok:false`**:
+    - If `lock_acquired === true` (race fallback — internal cleanup in init failed): release via `lock.mjs release --slug <slug> --session <lock_session_id>`. On `session_mismatch` log a warning, do NOT delete.
+    - **Always print** `error` to user. ABORT with `abort_reason` (which is one of: `missing_cli`, `unknown_flag`, `no_plan_resolved`, `resume_no_plan`, `plan_invalid`, `codex_cli_missing`, `repo_resolve_failed`, `config_invalid`, `max_iter_cap`, `lock_held`, `lock_corrupt`, `cannot_takeover_fresh_lock`, `lock_failed`, `resume_no_state`, `state_unreadable`, `state_invalid_json`, `resume_hash_mismatch`, `state_write_failed`, `workspace_failed`).
+    - The orchestrator does NOT touch state/workspace itself in any failure path — init handled (or did not reach) those side effects.
+4. **On `ok:true`**:
+    - Bind for the rest of the run: `state` (full object), `slug`, `plan_path`, `repo_root`, `repo_evidence_available`, `state_path`, `lock_session_id` (used in step 22 lock.refresh and step 30 lock.release), `lock_acquired = true`, `is_resume`. **Verify defensively**: `state.settings.max_iter ≤ 12` (step 21h re-checks at continue-prompt time).
+    - **Print each `warnings` entry** to the user (deprecation notices). Always print, even with `--quiet`.
+    - If `lock_took_over_stale === true`, log: "Took over stale lock from prior session."
+    - **Heads-up**: print "Will call Bash(node run-codex-review.mjs) up to {state.settings.max_iter} times. Allowlist via `/fewer-permission-prompts` if you'll use this often."
 
-# Phase B — Init
-
-**Critical ordering:** lock acquisition MUST precede any state/workspace writes. Otherwise a second concurrent run can corrupt state files before its `lock_held` abort fires.
-
-6. `slug = path.basename(plan_path, '.md')`.
-7. **Acquire lock FIRST**: `lock.mjs acquire --slug <slug> --plan <plan_path>` (add `--takeover` if user passed it).
-   - Save the returned `session_id` for the rest of the run (every refresh/release uses it).
-   - On `lock_held` → ABORT (existing session, age, hint). Do NOT proceed. Do NOT touch state or workspace.
-   - On `lock_corrupt` (no `--takeover`) → ABORT, suggest: "Inspect with `lock.mjs inspect --slug <slug>`; if no parallel run, re-run with --takeover."
-   - On `cannot_takeover_fresh_lock` → ABORT (fresh lock, takeover refused).
-   - On success → set `lock_acquired = true` (orchestrator-side flag, see step 30). Log if `took_over_stale:true`.
-8. `state_path = ~/.claude/plans/{slug}-tango.state.json`. State shape and field semantics: see [references/schemas.md](references/schemas.md).
-8.5. **Load merged settings** via `load-config.mjs --merge --cli '<json>'`. Orchestrator builds CLI JSON with these keys (using `_` for `-`): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check`, `force_final_check`, `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. Deprecation/migration semantics for the alias keys live in [references/advanced-config.md](references/advanced-config.md); orchestrator just needs to populate the key when the corresponding CLI flag is present.
-   - On exit 2 / `error` field present (validation failure or conflict per loader rules) → ABORT with helper's `error`/`detail`. Release the lock acquired in step 7.
-   - On success: parse stdout `{merged, sources, warnings}`. Set `state.settings = merged`, `state.settings_sources = sources`. Verify `state.settings.max_iter ≤ 12` defensively. **Print each `warnings` entry to the user**. Always print, even with `--quiet`.
-   - **Skip-loader bypass** (defensive): if env `PLAN_TANGO_NO_CONFIG_LOADER=1`, skip step 8.5 and apply legacy defaults inline (max_iter=6, effort=high, thread_mode=continue, final_check=never, lenient=false, service_tier=null, codex_profile=null, extra_codex_config=[], quiet=false, verbose_report=false, severity_aware=true; warnings=[]).
-9. **If `--resume`**: load state, compute `current_hash = sha256(plan)`. If `current_hash !== state.last_known_plan_hash` → ABORT: "Plan modified outside skill since last completed iteration (expected {short(last_known)}, got {short(current)}). Re-run without --resume to start fresh." Release the lock per Phase E rules. Otherwise resume from `state.iter + 1`.
-10. **Else (fresh)**: write state with `original_plan_hash = last_known_plan_hash = sha256(plan)`, `iter=0`, settings populated.
-11. **Ensure workspace dir**: `workspace.mjs ensure --slug <slug>`.
+State shape, params shape, ledger shape: see [references/schemas.md](references/schemas.md).
 
 # Phase C — Loop (`while N <= max_iter`, where N = state.iter + 1)
 
@@ -228,9 +223,9 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - **§6** — polish advisory list. Render only when `state.polish_only_terminal === true` AND `state.polish_advisory.length > 0`.
 
     **Skip rules**: §3+§4+§5 skipped only when N=0 (Phase A abort). §1+§2 always render when N≥1. §3+§5 also skipped when `verbose_report=false` (default).
-30. **Release lock — ONLY if it was actually acquired.** The orchestrator MUST track `lock_acquired = false` from session start, set to `true` ONLY after a successful step 7 acquire (with `session_id` saved). Phase A aborts (validation, codex CLI, repo resolve) happen BEFORE step 7 — they MUST NOT call `lock.mjs release` (slug + session_id don't exist; placeholder values would crash with `invalid_slug` / `missing_session_id`, masking the real validation error).
-    - **`lock_acquired === true`** → `lock.mjs release --slug <slug> --session <session_id>`. On `session_mismatch` log warning, do NOT delete (someone took over). On `lock_missing` no-op, fine.
-    - **`lock_acquired === false`** (Phase A abort, or step 7 itself failed): skip release entirely.
+30. **Release lock — ONLY if it was actually acquired.** The orchestrator tracks `lock_acquired` based on what `init.mjs` returned (Phase A step 4): `true` on `ok:true`, `true` only when init reported the race-fallback case `ok:false + lock_acquired:true`, otherwise `false`. The orchestrator never attempts release on early init failures (`init.mjs` either internally cleaned up or never acquired the lock — placeholder values would crash with `invalid_slug` / `missing_session_id`, masking the real abort reason).
+    - **`lock_acquired === true`** → `lock.mjs release --slug <slug> --session <lock_session_id>`. On `session_mismatch` log warning, do NOT delete (someone took over). On `lock_missing` no-op, fine.
+    - **`lock_acquired === false`**: skip release entirely.
     - This is the ONLY thing letting future runs start. Crash between iter and release with `lock_acquired === true` not having released → next run sees a 30-min stale window before allowed to acquire (or use --takeover sooner).
 31. Optionally cleanup workspace: `workspace.mjs cleanup --slug <slug>` if status is terminal-success (`converged-final`, `converged`, `converged-lenient`, `converged-with-polish`). Keep workspace for failed runs so user can inspect.
 
@@ -241,9 +236,9 @@ The orchestrator must enforce these during the run. Script-enforced and informat
 
 - **Off-plan invariant** (steps 22, 28b): every Edit is preceded by an `edit_plan[i].requested_file_path !== null` check. The `file_path` field itself is always `plan_path` by classifier construction — do NOT confuse the two.
 - **Thread invariant**: in `thread_mode=continue` (default), iter 1 opens a Codex thread (saved as `state.codex_thread_id`); iters 2..N call `codex exec resume <id>` AND inject the `<reset_iteration>` block to limit anchor bias. In `thread_mode=fresh` every iteration opens a new thread. On lost-session error the wrapper auto-fallbacks to fresh and reports `fallback_to_fresh:true`; orchestrator unconditionally overwrites `state.codex_thread_id` (step 16.5).
-- **Lock invariant** (Phase B step 7 → Phase E step 30): exactly one lock per slug for the run's lifetime. `--resume` re-acquires (state remembers slug; session_id is regenerated each invocation). Release is gated on `lock_acquired === true`.
+- **Lock invariant** (Phase A step 2 init.mjs → Phase E step 30): exactly one lock per slug for the run's lifetime. `--resume` re-acquires (state remembers slug; session_id is regenerated each invocation). Release is gated on `lock_acquired === true`. `init.mjs` releases internally if a step AFTER lock-acquire fails; race-fallback (cleanup itself fails) returns `lock_acquired:true` for orchestrator to retry release in Phase E.
 - **Integrity invariant** (step 10b): before every iteration, `sha256(plan)` MUST equal `state.last_known_plan_hash`. Mismatch = external modification = abort the cycle.
-- **Resume-safety invariant** (Phase A step 1): `--resume` MUST NOT use the `--newest` fallback. Resume requires explicit slug/path or active plan in system prompt.
+- **Resume-safety invariant** (enforced by `init.mjs`): `--resume` MUST NOT use the `--newest` fallback. Resume requires explicit slug/path or active plan in system prompt — init returns `abort_reason: resume_no_plan` otherwise.
 - **Max-iter hard cap invariant**: `state.settings.max_iter` MUST NOT exceed 12 — neither via initial `--max-iter` nor via the continue-prompt at step 21h.
 - **Severity-aware invariant** (step 21 a2): when `severity_aware=true` (default), a BLOCK with zero critical+major is TERMINAL, NOT a corrective trigger. Polish findings persist to `state.polish_advisory` (sourced from `apply-fixes.mjs` `advisory_plan[]`, deduped, includes manual-classified) and render in Phase E §6 — never auto-applied. Status branches on `lenient`: true → `converged-lenient`, false → `converged-with-polish`. Step 21 (a2) is the single termination point under this mode; legacy step 21 (d) is unreachable.
 </critical_invariants>

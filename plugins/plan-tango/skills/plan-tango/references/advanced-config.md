@@ -165,4 +165,4 @@ or config values at Phase D time.
 | Env var                          | Effect                                              |
 |----------------------------------|-----------------------------------------------------|
 | `PLAN_TANGO_DEBUG_CODEX_ARGS=1`  | `run-codex-review.mjs` prints the resolved Codex entry path and full argv to stderr before each spawn. Useful when the wrapper picks the wrong `codex.cmd` shim. |
-| `PLAN_TANGO_NO_INIT_HELPER=1`    | (Reserved — used after init.mjs lands.) Skip the consolidated init helper and run Phase A+B step-by-step in the orchestrator instead. Stabilization fallback. |
+| `PLAN_TANGO_WRAPPER_VERBOSE=1`   | Equivalent to passing `--verbose-output` to `run-codex-review.mjs`. Includes raw fields on clean ALLOW/BLOCK responses. |
