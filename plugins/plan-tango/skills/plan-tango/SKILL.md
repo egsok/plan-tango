@@ -1,7 +1,7 @@
 ---
 name: plan-tango
 description: "Auto-converge a Claude-written plan with Codex (gpt-5) review. Loops Codex review → Claude fixes → re-review until clean ALLOW or max-iter. Works inside plan mode on the active plan file. Use when you've drafted a plan and want external AI review without manual copypaste."
-argument-hint: "[plan-path-or-slug] [--max-iter N (default 6, cap 12)] [--effort none|minimal|low|medium|high|xhigh] [--model <m>] [--lenient] [--final-check] [--no-final-check] [--resume] [--takeover] [--continue-thread|--fresh-each] [--fast | --service-tier fast|flex] [--codex-profile <name>] [--quiet] [--verbose-report]"
+argument-hint: "[plan-path-or-slug] [--max-iter N (default 6, cap 12)] [--effort none|minimal|low|medium|high|xhigh] [--model <m>] [--lenient] [--final-check] [--no-final-check] [--resume] [--takeover] [--quiet] [--verbose-report]"
 allowed-tools:
   - Read
   - Edit
@@ -41,11 +41,10 @@ Args from `$ARGUMENTS`:
 - `--final-check` — opt in to Opus sanity-check on converged statuses (sets `final_check="always"`; mutually exclusive with `--no-final-check`).
 - `--resume` — resume from saved state for the same slug.
 - `--takeover` — override stale-but-readable lock (corrupt locks always require it).
-- `--continue-thread` / `--fresh-each` — thread mode override; default `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2).
 - `--quiet` — suppress per-iteration progress in Phase C. Phase A heads-up, Phase B init, ERROR/MALFORMED bullets, ABORT messages, AskUserQuestion prompts, and Phase E final report ALWAYS print.
 - `--verbose-report` — opt in to Phase E §3 (convergence table) + §5 (narrative). Default off; §1+§2+§4 (and §6 when polish_only_terminal) always render.
 
-**Advanced**: `--fast` (alias for `--service-tier fast`; needs `features.fast_mode=true`); `--service-tier <fast|flex>`; `--codex-profile <name>`. **Deprecated aliases (still work, print warning, removed in v0.3)**: `--no-final-check` (disable override), `--force-final-check` (same as `--final-check`).
+Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2). Advanced flags — `--continue-thread` / `--fresh-each` (override thread mode), `--service-tier <fast|flex>`, `--fast`, `--codex-profile <name>`, `extra_codex_config` (config field) — are documented in [references/advanced-config.md](references/advanced-config.md). **Deprecated aliases (still work, print warning, removed in v0.3)**: `--no-final-check` (disable override), `--force-final-check` (same as `--final-check`).
 </context>
 
 <process>
