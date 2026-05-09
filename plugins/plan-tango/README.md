@@ -286,6 +286,8 @@ Write(~/.claude/plans/*-tango.workspace/**)
 
 После первого прогона запусти `/fewer-permission-prompts` — он добавит allowlist в `~/.claude/settings.json`, и дальше прогоны будут без вопросов.
 
+**Diagnostics:** при подозрении на проблемы (codex CLI not found, plans dir not writable, lock stuck) запусти `node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/doctor.mjs` — проверит codex CLI, парсинг user-config, write-доступ к `~/.claude/plans/`, lock acquire/release цикл и контракт `run-codex-review.mjs` на bad input. Все проверки read-only / dry-run; пробные файлы убираются автоматически. Добавь `--json` для машинно-читаемого вывода.
+
 ### Plan mode + paths под `~/.claude/plans/` (важно)
 
 В **plan mode** Claude Code применяет дополнительные ограничения: даже при `defaultMode: "acceptEdits"` и `skipAutoPermissionPrompt: true` любой `Edit`/`Write` на путь **вне текущего VS Code workspace folder ИЛИ вне `permissions.additionalDirectories`** требует approval prompt. Опция «Yes, allow all edits this session» в plan mode действует только на конкретный файл — следующий Write на другой файл снова прокидывает prompt.
@@ -369,6 +371,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
         ├── user-config.example.json          # образец persistent defaults
         ├── scripts/
         │   ├── init.mjs                      # Phase A in one Bash call: validate + codex-cli check + repo + load-config + lock + state init/resume + workspace
+        │   ├── doctor.mjs                    # diagnostics one-liner: codex CLI, config parse, plans dir writable, lock cycle, wrapper error path
         │   ├── load-config.mjs               # CLI flags + user-config + defaults → merged settings
         │   ├── prepare-iter.mjs              # builds iter{N}.{prompt.md,params.json,last-message.txt} in one Bash call
         │   ├── run-codex-review.mjs          # spawn() codex exec --json (resolves underlying codex.js); retries empty output once
