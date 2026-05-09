@@ -169,10 +169,13 @@ function resolvePlanPath({ planArg, activePlan, isResume }) {
     // Resume-safety invariant: no --newest fallback.
     return null;
   }
-  // Try newest as last resort
+  // Try newest as last resort. plan-paths.mjs --newest returns
+  // {ok:true, found:true|false, plan_path?, slug?, plan_size_bytes?, mtime_iso?}.
   const newestRes = runHelper("plan-paths.mjs", ["--newest"]);
   const parsed = parseHelperJson("plan-paths.mjs --newest", newestRes);
-  if (parsed.ok && parsed.path) return parsed.path;
+  if (parsed && parsed.ok && parsed.found && parsed.plan_path) {
+    return parsed.plan_path;
+  }
   return null;
 }
 

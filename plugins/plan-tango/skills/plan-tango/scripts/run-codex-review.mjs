@@ -321,7 +321,12 @@ function isLostSession(stderrBuf) {
 
 async function main() {
   // --- params validation ---
-  const paramsPath = process.argv[2];
+  // First positional arg that is NOT a recognized flag is the params path.
+  // Recognized flags: --verbose-output (parsed at module-load via includes()).
+  // This lets callers use either order: `wrapper params.json --verbose-output`
+  // or `wrapper --verbose-output params.json`.
+  const positionals = process.argv.slice(2).filter((a) => a !== "--verbose-output");
+  const paramsPath = positionals[0];
   if (!paramsPath) {
     emitError("params_missing");
     return;
