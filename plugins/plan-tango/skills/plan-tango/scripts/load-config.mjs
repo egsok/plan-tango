@@ -40,7 +40,11 @@ const BUILTIN_DEFAULTS = Object.freeze({
   codex_profile: null,
   extra_codex_config: [],
   quiet: false,
-  severity_aware: true
+  severity_aware: true,
+  // v0.2 Tier 2.2: Phase E §3 (convergence table) and §5 (narrative) are
+  // opt-in via --verbose-report or `verbose_report: true` in config.
+  // §1+§2+§4 (and §6 when polish_only_terminal) always render.
+  verbose_report: false
 });
 
 const VALID_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
@@ -166,6 +170,11 @@ function validateValue(key, value, source) {
         emitErr("invalid_type", `severity_aware must be boolean`, { field: key, source, got: typeof value });
       }
       return;
+    case "verbose_report":
+      if (typeof value !== "boolean") {
+        emitErr("invalid_type", `verbose_report must be boolean`, { field: key, source, got: typeof value });
+      }
+      return;
     default:
       emitErr("unknown_key", `Unknown configurable key: ${key}`, { field: key, source });
   }
@@ -225,7 +234,8 @@ function validateCli(cli) {
   //   plus all CONFIGURABLE_KEYS directly.
   const allowedExtra = new Set([
     "no_final_check", "force_final_check", "final_check_flag",
-    "continue_thread", "fresh_each", "fast"
+    "continue_thread", "fresh_each", "fast",
+    "verbose_report_flag"
   ]);
   for (const k of Object.keys(cli)) {
     if (CONFIGURABLE_KEYS.includes(k)) continue;
@@ -289,6 +299,7 @@ function mapCliToConfig(cli, warnings) {
   if (cli.continue_thread === true) out.thread_mode = "continue";
   if (cli.fresh_each === true) out.thread_mode = "fresh";
   if (cli.fast === true) out.service_tier = "fast";
+  if (cli.verbose_report_flag === true) out.verbose_report = true;
   return out;
 }
 
