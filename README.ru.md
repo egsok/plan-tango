@@ -1,53 +1,71 @@
-# plan-tango
+<p align="center">
+  <img src="docs/hero.png" alt="plan-tango — Claude и Codex танцуют над одним планом" width="280">
+</p>
 
-> Авто-сходимость плана Claude Code через итерации Codex (gpt-5) review — Codex критикует → Claude применяет правки → Codex re-review → пока не получится чистый `ALLOW` или не сработает hard cap.
+<h1 align="center">plan-tango</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Version](https://img.shields.io/badge/version-0.2.0-green) [![Read in English](https://img.shields.io/badge/lang-en-red)](README.md)
+<p align="center">
+  <em>Два AI ревьюят один план в цикле.</em><br>
+  Claude Code пишет → Codex (gpt-5) разносит → Claude применяет фиксы → пока Codex не скажет <code>ALLOW</code>.
+</p>
 
-Когда ты только что написал нетривиальный план в plan mode и хочешь второе мнение от другой модели до имплементации, ручной копипаст между терминалами не масштабируется. `plan-tango` автоматизирует ping-pong: читает активный plan-файл под `~/.claude/plans/`, спавнит Codex CLI на структурированный review, применяет правки обратно в план через `Edit`, и зацикливает. Дефолтный бюджет — 6 итераций (hard cap 12). Работает прямо внутри plan mode — не нужно выходить и заходить.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/version-0.2.0-green" alt="Version 0.2.0">
+  <a href="README.md"><img src="https://img.shields.io/badge/lang-en-red" alt="Read in English"></a>
+</p>
+
+---
+
+Когда план в plan mode становится плотным настолько, что за него страшно браться, обычный ход выглядит так: открыть Codex в соседнем терминале, скопировать план туда, дождаться ревью, перетащить findings обратно в Claude, применить, снова в Codex — посмотреть, что осталось. plan-tango гоняет этот цикл одной командой.
+
+Скилл читает активный plan-файл под `~/.claude/plans/`, спавнит `codex exec` со структурированным review-промптом, парсит вердикт (`ALLOW` или `BLOCK` + findings), применяет правки обратно в план через `Edit`, и повторяет — по дефолту до 6 итераций, hard cap 12. Из plan mode выходить не нужно.
 
 ## Установка
 
-1. **Зависимости**: Claude Code 2.x, Node.js 18+, Codex CLI на `PATH`:
-   ```
-   npm install -g @openai/codex
-   codex login
-   ```
+**Зависимости.** Claude Code 2.x, Node.js 18+, Codex CLI на `PATH`:
 
-2. **Добавить marketplace и поставить плагин**:
-   ```
-   /plugin marketplace add egsok/plan-tango
-   /plugin install plan-tango@plan-tango
-   ```
+```bash
+npm install -g @openai/codex
+codex login
+```
 
-3. **Рестарт Claude Code сессии** — чтобы плагин загрузил skills, scripts и agent в namespace.
+**Подключи marketplace и поставь плагин:**
+
+```
+/plugin marketplace add egsok/plan-tango
+/plugin install plan-tango@plan-tango
+```
+
+Рестартни сессию Claude Code — плагин регистрирует skill, scripts и agent на старте сессии, на лету это не подхватится.
 
 ## Использование
 
 ```
-/plan-tango                   # использовать активный план из plan mode (или самый свежий в ~/.claude/plans/)
-/plan-tango <slug-or-path>    # явный plan-файл
+/plan-tango                      # активный план из plan mode
+/plan-tango <slug-or-path>       # или явный путь к файлу
 /plan-tango --max-iter 10 --effort medium --lenient --quiet
 ```
 
-Опциональные постоянные настройки: `~/.claude/plan-tango/config.json` (запусти `/plan-tango:config` для интерактивного wizard'а, либо скопируй `plugins/plan-tango/skills/plan-tango/user-config.example.json` и отредактируй вручную).
+Постоянные настройки лежат в `~/.claude/plan-tango/config.json`. Если не хочется редактировать JSON руками — интерактивный wizard: `/plan-tango:config`.
 
-Полная справка по флагам, статусам и архитектуре: [plugins/plan-tango/README.md](plugins/plan-tango/README.md) (English) · [plugins/plan-tango/README.ru.md](plugins/plan-tango/README.ru.md) (Russian).
+Полная документация по флагам, статусам и архитектуре — [plugins/plan-tango/README.md](plugins/plan-tango/README.md) (English) · [plugins/plan-tango/README.ru.md](plugins/plan-tango/README.ru.md) (Russian).
 
 ## Обновление
 
-Ручное:
+Вручную:
+
 ```
 /plugin update plan-tango@plan-tango
 ```
 
-Авто-обновление (opt-in на marketplace): открой `/plugin`, выбери **Marketplaces → plan-tango → Enable auto-update**. У third-party marketplace'ов авто-обновление по умолчанию выключено — это политика Claude Code, не выбор plan-tango.
+Авто-обновление включается отдельно: `/plugin → Marketplaces → plan-tango → Enable auto-update`. У third-party маркетплейсов авто-апдейт по дефолту выключен — это политика Claude Code, не plan-tango.
 
-Независимо от этих двух механизмов, plan-tango сам проверяет GitHub release channel в конце каждого прогона: не чаще раза в 7 дней, silent на network failure, печатает одну строку когда доступна новая версия. Opt-out — `update_check: false` в `~/.claude/plan-tango/config.json`.
+Независимо от этого plan-tango в конце каждого прогона сам смотрит GitHub releases (не чаще раза в 7 дней, тихо падает при проблемах с сетью) и допечатывает одну строку, если есть свежий тэг. Отключить — `update_check: false` в `~/.claude/plan-tango/config.json`.
 
-## Feedback
+## Фидбек
 
-Issues, PR'ы, предложения: [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues). Телеграм-канал про AI-инструменты и Claude Code: [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
+Issues и PR — [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues). Про AI-инструменты и Claude Code я пишу в Telegram-канал [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
 
 ## License
 
