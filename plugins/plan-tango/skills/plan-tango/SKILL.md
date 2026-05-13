@@ -71,7 +71,8 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
     - **Always print** `error` to user. ABORT with `abort_reason` (which is one of: `missing_cli`, `unknown_flag`, `no_plan_resolved`, `resume_no_plan`, `plan_invalid`, `codex_cli_missing`, `repo_resolve_failed`, `config_invalid`, `max_iter_cap`, `lock_held`, `lock_corrupt`, `cannot_takeover_fresh_lock`, `lock_failed`, `resume_no_state`, `state_unreadable`, `state_invalid_json`, `resume_hash_mismatch`, `state_write_failed`, `workspace_failed`).
     - The orchestrator does NOT touch state/workspace itself in any failure path — init handled (or did not reach) those side effects.
 4. **On `ok:true`**:
-    - Bind for the rest of the run: `state` (full object), `slug`, `plan_path`, `repo_root`, `repo_evidence_available`, `state_path`, `lock_session_id` (used in step 22 lock.refresh and step 30 lock.release), `lock_acquired = true`, `is_resume`. **Verify defensively**: `state.settings.max_iter ≤ 12` (step 21h re-checks at continue-prompt time).
+    - Bind for the rest of the run: `state` (full object), `slug`, `plan_path`, `repo_root`, `repo_evidence_available`, `state_path`, `lock_session_id` (used in step 22 lock.refresh and step 30 lock.release), `lock_acquired = true`, `is_resume`, **`settings` (top-level from init output — this is the fresh loader output for *this* invocation; distinct from `state.settings` which is persisted at first-run and stays stable across `--resume`).** **Verify defensively**: `state.settings.max_iter ≤ 12` (step 21h re-checks at continue-prompt time).
+    - **When to read `settings` vs `state.settings`**: most runtime decisions read `state.settings` (max_iter, effort, thread_mode, final_check, lenient, severity_aware, verbose_report) — these were settled at first-run for resume-stability. Step 29.5 update-check reads `settings.update_check` (top-level, fresh) so a user who edited `~/.claude/plan-tango/config.json` between runs can flip the opt-out without re-starting from scratch.
     - **Print each `warnings` entry** to the user (deprecation notices). Always print, even with `--quiet`.
     - If `lock_took_over_stale === true`, log: "Took over stale lock from prior session."
     - **Heads-up**: print "Will call Bash(node run-codex-review.mjs) up to {state.settings.max_iter} times. Allowlist via `/fewer-permission-prompts` if you'll use this often."
@@ -223,6 +224,21 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - **§6** — polish advisory list. Render only when `state.polish_only_terminal === true` AND `state.polish_advisory.length > 0`.
 
     **Skip rules**: §3+§4+§5 skipped only when N=0 (Phase A abort). §1+§2 always render when N≥1. §3+§5 also skipped when `verbose_report=false` (default).
+
+29.5. **Update notice check.** Independent of §3/§5 verbose-report gating; runs after step 29 report rendering, before step 30 lock release. Skip entirely when `settings.update_check === false` (top-level `settings`, not `state.settings` — see Phase A step 4 binding rationale).
+
+    ```bash
+    # Read current plan-tango version once
+    CURR_VER=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CLAUDE_PLUGIN_ROOT + '/.claude-plugin/plugin.json', 'utf8')).version)")
+    node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/update-check.mjs --current-version "$CURR_VER"
+    ```
+
+    Parse the JSON response. The script always exits 0 and always emits JSON:
+    - `status === "newer-available"` → print exactly one line to user: `\n<response.message>` (already formatted with the `/plugin update plan-tango@plan-tango` hint).
+    - `status ∈ {ok, skipped, error}` → print nothing. Silent.
+
+    The script is fail-silent on its own (network timeout, missing git, invalid cache) — orchestrator does NOT branch on stderr or exit codes. If the Bash call itself crashes (unlikely but possible), swallow the error and continue to step 30. Update-check is never blocking.
+
 30. **Release lock — ONLY if it was actually acquired.** The orchestrator tracks `lock_acquired` based on what `init.mjs` returned (Phase A step 4): `true` on `ok:true`, `true` only when init reported the race-fallback case `ok:false + lock_acquired:true`, otherwise `false`. The orchestrator never attempts release on early init failures (`init.mjs` either internally cleaned up or never acquired the lock — placeholder values would crash with `invalid_slug` / `missing_session_id`, masking the real abort reason).
     - **`lock_acquired === true`** → `lock.mjs release --slug <slug> --session <lock_session_id>`. On `session_mismatch` log warning, do NOT delete (someone took over). On `lock_missing` no-op, fine.
     - **`lock_acquired === false`**: skip release entirely.

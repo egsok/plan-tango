@@ -44,7 +44,11 @@ const BUILTIN_DEFAULTS = Object.freeze({
   // v0.2 Tier 2.2: Phase E §3 (convergence table) and §5 (narrative) are
   // opt-in via --verbose-report or `verbose_report: true` in config.
   // §1+§2+§4 (and §6 when polish_only_terminal) always render.
-  verbose_report: false
+  verbose_report: false,
+  // v0.2 Tier 3: end-of-Phase-E version check against GitHub releases.
+  // No CLI flag — config-only opt-out. Throttled 7d, silent on network
+  // failure. See update-check.mjs for protocol.
+  update_check: true
 });
 
 const VALID_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
@@ -173,6 +177,11 @@ function validateValue(key, value, source) {
     case "verbose_report":
       if (typeof value !== "boolean") {
         emitErr("invalid_type", `verbose_report must be boolean`, { field: key, source, got: typeof value });
+      }
+      return;
+    case "update_check":
+      if (typeof value !== "boolean") {
+        emitErr("invalid_type", `update_check must be boolean`, { field: key, source, got: typeof value });
       }
       return;
     default:

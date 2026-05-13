@@ -1,183 +1,191 @@
 # plan-tango
 
-Авто-цикл review плана между Claude Code и Codex (gpt-5). Вместо ручного копипаста между вкладками — одна команда, и план гоняется через Codex review → Claude правит → ещё review → пока не получится чистый `ALLOW` или не сработает один из стоп-критериев.
+> Read in Russian: [README.ru.md](README.ru.md)
 
-## Когда использовать
+Auto-converge a Claude Code plan against Codex (gpt-5) review. Instead of manually copy-pasting between terminals, one command runs the loop: Codex reviews → Claude applies fixes → Codex re-reviews → repeat until clean `ALLOW` or one of the stop criteria triggers.
 
-Ты только что написал план в plan mode (Claude Code сохранил его в `~/.claude/plans/{slug}.md`) и хочешь укрепить его внешним AI-ревью перед имплементацией. Скилл сам:
-- читает текущий plan-файл,
-- гоняет до 6 (по дефолту, hard cap 12) итераций Codex review,
-- применяет правки в plan-файл через Edit (только в нём, никогда в других файлах),
-- опционально добавляет финальную проверку Opus subagent'ом для планов с runtime-контрактами (subagents/permissions/hooks/MCP).
+## When to use
 
-Работает **прямо внутри plan mode** — не нужно выходить и заходить.
+You've just drafted a plan in plan mode (Claude Code saved it under `~/.claude/plans/{slug}.md`) and want to harden it with an external AI review before implementation. The skill:
 
-## Базовое использование
+- reads the active plan file,
+- runs up to 6 (default; hard cap 12) Codex review iterations,
+- applies each round of fixes back into the plan via `Edit` (only the plan file, never any other file),
+- optionally finishes with an Opus subagent sanity-check on plans that touch runtime contracts (subagents / permissions / hooks / MCP).
 
-Две эквивалентные формы вызова — **`/plan-tango`** и **`/plan-tango:plan-tango`**:
+Works **inside plan mode** — no need to exit and re-enter.
+
+## Basic usage
+
+Two equivalent invocation forms — **`/plan-tango`** and **`/plan-tango:plan-tango`**:
 
 ```
-/plan-tango                      # короткая форма (namespace auto-routing)
-/plan-tango:plan-tango           # явная форма <plugin-name>:<skill-name>
+/plan-tango                      # short form (namespace auto-routing)
+/plan-tango:plan-tango           # explicit <plugin-name>:<skill-name>
 ```
 
-Обе резолвятся в один и тот же skill. Claude Code автоматически роутит короткую форму на skill `plan-tango` внутри плагина `plan-tango`, потому что имя плагина совпадает с именем skill и нет конфликтующих claims из других плагинов.
+Both resolve to the same skill. Claude Code auto-routes the short form to skill `plan-tango` inside plugin `plan-tango` because the plugin name matches the skill name and no other installed plugin claims it.
 
-Без аргументов: возьмёт активный plan-файл из системного промпта, либо самый свежий по mtime в `~/.claude/plans/`.
+Without arguments: uses the active plan from the system prompt, otherwise the newest by mtime under `~/.claude/plans/`.
 
-С явным планом:
+With an explicit plan:
 ```
 /plan-tango <slug-or-path>
 /plan-tango sample-plan
 /plan-tango ~/.claude/plans/foo.md
 ```
 
-> **Note**: ранее короткая форма ломалась в некоторых окружениях через `commands/*.md` wrapper. В v0.1.0 wrapper удалён — короткая форма работает напрямую через namespace auto-routing, без обёрток.
+## All options
 
-## Все опции
-
-| Флаг | Дефолт | Что делает |
+| Flag | Default | What it does |
 |---|---|---|
-| `--max-iter N` | 6 (cap 12) | Лимит итераций. На достижении — interactive prompt: continue +4 / continue custom / stop / abort. Hard cap 12 не обходится даже через continue. |
-| `--effort none\|minimal\|low\|medium\|high\|xhigh` | `high` | Reasoning-effort для Codex. ⚠️ `minimal` отвергается Codex API когда включены image_gen/web_search инструменты (default setup) — используй `low` если хочешь быстрее. |
-| `--model <m>` | unset | Конкретная модель Codex. По умолчанию `--model` НЕ передаётся — Codex выбирает свою стандартную модель сам (из `~/.codex/config.toml`). Передай явно (например `gpt-5.5`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`) если нужна конкретная. |
-| `--lenient` | off | Останавливаться когда нет critical/major (вместо строгого ALLOW) |
-| `--no-final-check` | off | Никогда не запускать Opus финал-чек. Взаимоисключающий с `--force-final-check`. |
-| `--force-final-check` | off | Запустить Opus даже если auto-gate сказал "skip". Взаимоисключающий с `--no-final-check`. |
-| `--resume` | off | Подхватить с сохранённого state (требует явный slug/path или активный план) |
-| `--takeover` | off | Адопт corrupt lock'а после inspect (флаг ОБЯЗАТЕЛЕН). Stale lock'и (>30 мин) auto-removed без этого флага (warning в stderr). Свежие (≤30 мин) lock'и отказываются всегда — `--takeover` НЕ перехватывает их. Используй только для corrupt locks убедившись что параллельного запуска нет. |
-| `--continue-thread` / `--fresh-each` | `continue` (built-in) | Thread mode override (взаимоисключающие). `continue` (default) — все итерации в одном Codex thread (`codex resume`), дешевле/быстрее, чище в Codex panel; iter ≥ 2 получают reset-prompt чтобы Codex не anchorился на прошлых выводах. `fresh` — каждая итерация новый thread (полностью независимый аудит). См. секцию «Thread mode» ниже. |
-| `--fast` | off | Shortcut для `--service-tier fast`. Включает Codex priority processing tier (~1.5x скорость, +$). Требует `features.fast_mode = true` в `~/.codex/config.toml` (default). |
-| `--service-tier <fast\|flex>` | unset | Явный выбор service tier (передаётся как `-c service_tier="<value>"`). |
-| `--codex-profile <name>` | unset | Profile из `~/.codex/config.toml` (`-p <name>`). Загружается ДО `-c` overrides; canonical settings (effort, service_tier, model) выигрывают на конфликте. |
-| `--quiet` | off | Заглушает per-iteration сообщения в Phase C (snapshot/spawn/ALLOW-BLOCK verdict-line/apply summary). Phase E §1-§5 (final report) печатается всегда. ERROR/MALFORMED verdict lines печатаются всегда. Bash IN/OUT панели не управляются скиллом — это рендер Claude Code. |
+| `--max-iter N` | 6 (cap 12) | Iteration budget. On reaching the cap → interactive prompt: continue +4 / continue custom / stop / abort. Hard cap 12 is never bypassed, even through continue. |
+| `--effort none\|minimal\|low\|medium\|high\|xhigh` | `high` | Reasoning effort for Codex. ⚠️ `minimal` is rejected by the Codex API when `image_gen` / `web_search` tools are enabled (the default setup) — use `low` for fast runs. |
+| `--model <m>` | unset | Specific Codex model. By default `--model` is NOT passed — Codex picks its own default from `~/.codex/config.toml`. Pass explicitly (e.g. `gpt-5.5`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`) if you need a specific one. |
+| `--lenient` | off | Stop when no critical/major remain (instead of strict ALLOW). |
+| `--final-check` | off | Opt in to Opus sanity-check on converged statuses. Sets `final_check="always"` for this run. |
+| `--no-final-check` | off | Deprecated alias — disables Opus final-check for this run (emits a warning; will be removed in v0.3). |
+| `--force-final-check` | off | Deprecated alias for `--final-check` (emits a warning; will be removed in v0.3). |
+| `--resume` | off | Resume from saved state (requires an explicit slug/path or an active plan from the system prompt). |
+| `--takeover` | off | Adopt a corrupt lock after `lock.mjs inspect` (flag is REQUIRED for corrupt locks). Stale locks (>30 min) are auto-removed without this flag (warning to stderr). Fresh locks (≤30 min) are always refused — `--takeover` does NOT override them. Use only for corrupt locks after confirming no parallel run is in progress. |
+| `--continue-thread` / `--fresh-each` | `continue` (built-in default) | Thread mode override (mutually exclusive). `continue` (default) — all iterations share one Codex thread (`codex resume`), cheaper / faster / cleaner in the Codex panel; iter ≥ 2 receive a reset-prompt block so Codex doesn't anchor on its prior output. `fresh` — each iteration is a new thread (fully independent audit). See the "Thread mode" section below. |
+| `--fast` | off | Shortcut for `--service-tier fast`. Enables Codex priority processing tier (~1.5× speed, higher cost). Requires `features.fast_mode = true` in `~/.codex/config.toml` (default in current Codex CLI). |
+| `--service-tier <fast\|flex>` | unset | Explicit service-tier selection (passed as `-c service_tier="<value>"`). |
+| `--codex-profile <name>` | unset | Profile from `~/.codex/config.toml` (`-p <name>`). Loaded BEFORE `-c` overrides; canonical settings (effort, service_tier, model) win on conflict. |
+| `--quiet` | off | Suppresses per-iteration prints in Phase C (snapshot / sending-to-Codex / verdict-line / apply summary). The final Phase E report always prints. `ERROR` / `MALFORMED` verdict lines always print. Bash IN/OUT panels are rendered by Claude Code itself and not controlled by this flag. |
+| `--verbose-report` | off | Opt in to Phase E §3 (per-iteration convergence table) + §5 (narrative). Default off; §1+§2+§4 (and §6 when applicable) always render. |
 
 ## Persistent defaults — `~/.claude/plan-tango/config.json`
 
-Если не хочешь каждый раз набирать `--effort medium --max-iter 8` — положи дефолты в файл:
+If you don't want to type `--effort medium --max-iter 8` every run, drop defaults into a file:
 
 ```bash
 mkdir ~/.claude/plan-tango
 cp "$(claude plugin path plan-tango)/skills/plan-tango/user-config.example.json" ~/.claude/plan-tango/config.json
-# Если `claude plugin path` недоступен, путь обычно: ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/plan-tango/user-config.example.json
-# отредактируй
+# If `claude plugin path` is unavailable, the typical path is:
+# ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/plan-tango/user-config.example.json
+# then edit
 ```
 
-Поля (все опциональные, отсутствующие → built-in default):
+Or run the interactive wizard: `/plan-tango:config`.
+
+Fields (all optional — anything absent → built-in default):
 
 ```json
 {
   "model": null,
   "effort": "high",
   "max_iter": 6,
-  "thread_mode": "fresh",
-  "final_check": "auto",
+  "thread_mode": "continue",
+  "final_check": "never",
   "lenient": false,
   "service_tier": null,
   "codex_profile": null,
   "extra_codex_config": [],
   "quiet": false,
-  "severity_aware": true
+  "severity_aware": true,
+  "verbose_report": false,
+  "update_check": true
 }
 ```
 
-> `severity_aware` is **config-only** — no CLI flag (by design choice — see «Severity-aware convergence» section ниже). Чтобы выключить — выстави `false` в config.json или прогони wizard `/plan-tango:config`.
+> `severity_aware` and `update_check` are **config-only** — no CLI flags (by design — see "Severity-aware convergence" below for the rationale on severity_aware). To toggle them, edit `config.json` or run `/plan-tango:config`.
 
-**Precedence (старшее побеждает):**
+**Precedence (highest wins):**
 ```
-CLI флаг > ~/.claude/plan-tango/config.json > built-in default
+CLI flag > ~/.claude/plan-tango/config.json > built-in default
 ```
 
-Валидация при загрузке: `effort` enum, `max_iter ≤ 12`, `thread_mode ∈ {fresh, continue}`, `service_tier ∈ {null, fast, flex}`, `final_check ∈ {auto, never, force}`. На нарушении — abort с понятной ошибкой ДО старта прогона.
+Load-time validation: `effort` enum, `max_iter ≤ 12`, `thread_mode ∈ {fresh, continue}`, `service_tier ∈ {null, fast, flex}`, `final_check ∈ {never, always}` (legacy `auto` / `force` are accepted and auto-migrated with a warning). On any violation — abort with a clear error BEFORE the run starts.
 
-`extra_codex_config: ["key=val", ...]` — массив сырых `-c key=value` для проброса в Codex (для флагов которые plan-tango не surface'ит сам). Применяются ПОСЛЕ profile, но ДО canonical (effort/service_tier/model выигрывают на конфликте).
+`extra_codex_config: ["key=val", ...]` — array of raw `-c key=value` strings to pass through to Codex (for flags plan-tango doesn't surface natively). Applied AFTER profile but BEFORE canonical (effort / service_tier / model win on conflict).
 
-> Если запускаешь `/plan-tango:config` — мастер сохраняет существующее значение `extra_codex_config` без изменений (нет UI для редактирования массива через AskUserQuestion). Чтобы добавить/удалить `-c key=value` строки — отредактируй `~/.claude/plan-tango/config.json` вручную.
+> When running `/plan-tango:config`, the wizard preserves the existing `extra_codex_config` and `update_check` values without prompting (no UI for editing the raw `-c` array via `AskUserQuestion`; `update_check` is set-and-forget). To add/remove `-c key=value` strings or flip `update_check`, edit `~/.claude/plan-tango/config.json` directly.
 
 ## Thread mode
 
-Дефолт встроенный — `continue`. Переключение через флаг или config.
+Built-in default is `continue`. Switch via flag or config.
 
-| Mode | Поведение | Плюсы | Минусы |
+| Mode | Behavior | Pros | Cons |
 |---|---|---|---|
-| `continue` (default) | Iter 1 открывает thread, iter ≥ 2 делают `codex exec resume <id>` + reset-prompt в начале промпта | Дешевле (prompt cache hits на повторяющихся блоках), быстрее, один thread в Codex panel на весь run. Reset-prompt снижает anchor bias | Bias не устранён полностью — Codex видит свою прошлую историю |
-| `fresh` | Каждая итерация — новый Codex thread (`codex exec` без resume) | Полностью независимые review, нет anchor bias | Дороже (нет prompt-cache hit), медленнее, засирает список сессий в Codex panel |
+| `continue` (default) | Iter 1 opens a thread; iter ≥ 2 calls `codex exec resume <id>` + injects a reset-prompt block at the start of the prompt | Cheaper (prompt-cache hits on repeated blocks), faster, single thread per run in the Codex panel. Reset-prompt reduces anchor bias | Bias is not fully removed — Codex still sees its prior history |
+| `fresh` | Each iteration is a new Codex thread (`codex exec` without resume) | Fully independent reviews, no anchor bias | More expensive (no prompt-cache hit), slower, clutters the session list in the Codex panel |
 
-Switch: `--continue-thread` или `--fresh-each` (взаимоисключающие). Persistent — поле `thread_mode` в config.json.
+Switch: `--continue-thread` or `--fresh-each` (mutually exclusive). Persistent: `thread_mode` field in `config.json`.
 
-**Lost-session fallback** — если в continue-mode codex не нашёл сохранённый thread (удалили через TUI, исчез из `~/.codex/sessions/`), wrapper автоматически делает один re-spawn в fresh, обновляет thread_id и продолжает. В логе: `Thread <id> lost, falling back to fresh.`
+**Lost-session fallback** — in continue mode, if Codex can't find the saved thread (deleted via TUI, evicted from `~/.codex/sessions/`), the wrapper auto-respawns once in fresh mode, updates `thread_id`, and continues. Log line: `Thread <id> lost, falling back to fresh.`
 
-**⚠️ Migration note (для тех у кого уже есть config.json)**: если ты копировал `user-config.example.json` в `~/.claude/plan-tango/config.json` до сегодняшнего обновления — там скорее всего стоит `"thread_mode": "fresh"` (старый дефолт). Этот файл pin'ит старое поведение (precedence: user-config > built-in default). Чтобы перейти на новый дефолт `continue` — либо удали поле `thread_mode` из своего config.json (полностью), либо явно поставь `"continue"`.
+**⚠️ Migration note** (for existing users with a hand-edited `config.json`): if you copied `user-config.example.json` to `~/.claude/plan-tango/config.json` before the v0.2 update, your file likely pins `"thread_mode": "fresh"` (the old default). User-config wins over built-in default. To pick up the new default `continue` — either remove the `thread_mode` line entirely or explicitly set `"continue"`.
 
 ## Severity-aware convergence (`severity_aware`)
 
-Включён по умолчанию. Меняет реакцию на BLOCK verdicts по severity:
+Enabled by default. Changes the loop's reaction to BLOCK verdicts based on severity:
 
-- **clean** — `ALLOW` + 0 findings → `converged` (как было)
-- **polish-only** — `BLOCK` с only minor/nit (zero critical/major) → **terminal**, без corrective iter. Status: `converged-with-polish` (или `converged-lenient` если ты тоже передал `--lenient`). Polish findings рендерятся в §6 финального отчёта как advisory list.
-- **blocking** — `BLOCK` с ≥1 critical/major → corrective iter (как было)
+- **clean** — `ALLOW` + zero findings → `converged` (unchanged).
+- **polish-only** — `BLOCK` with only minor/nit (zero critical/major) → **terminal**, no corrective iter. Status: `converged-with-polish` (or `converged-lenient` if you also pass `--lenient`). Polish findings render as an advisory list in §6 of the final report.
+- **blocking** — `BLOCK` with ≥1 critical/major → corrective iter (unchanged).
 
-**Зачем**: на длинных прогонах loop переходит из «снижает риск» в «имитирует уверенность» — полировочные findings (стиль JSON-комментариев, формулировки invariants) гоняются через corrective iter с тем же весом что архитектурные баги, и сами правки вносят новые minor inconsistencies. Severity-aware terminate'ит на polish-only, оставляя список advisory в §6 — пользователь сам решает применять или нет.
+**Why**: on long runs the loop drifts from "reducing risk" into "manufacturing confidence" — polish findings (JSON-comment style, invariant wording) get cycled through corrective iters with the same weight as architectural bugs, and the edits themselves introduce new minor inconsistencies. Severity-aware terminates on polish-only and leaves the advisory list in §6 — you decide whether to apply manually.
 
-**Точное поведение по комбинациям с `--lenient`** (сравнительная таблица):
+**Exact behavior in combinations with `--lenient`**:
 
-| Config | `--lenient` | На polish-only BLOCK |
+| Config | `--lenient` | On polish-only BLOCK |
 |---|---|---|
-| `severity_aware: true` (default) | off | terminal, status=`converged-with-polish`, advisory в §6 |
-| `severity_aware: true` (default) | on | terminal, status=`converged-lenient`, advisory в §6 (preserves --lenient downstream-metric semantic) |
-| `severity_aware: false` (opt-out) | off | corrective iter (legacy behavior — гоняет polish-fixes) |
-| `severity_aware: false` (opt-out) | on | terminal, status=`converged-lenient`, advisory **NE** rendered (legacy --lenient путь) |
+| `severity_aware: true` (default) | off | terminal, status=`converged-with-polish`, advisory in §6 |
+| `severity_aware: true` (default) | on | terminal, status=`converged-lenient`, advisory in §6 (preserves `--lenient` downstream-metric semantic) |
+| `severity_aware: false` (opt-out) | off | corrective iter (legacy behavior — cycles polish-fixes) |
+| `severity_aware: false` (opt-out) | on | terminal, status=`converged-lenient`, advisory **NOT** rendered (legacy `--lenient` path) |
 
-**`--lenient` НЕ skip'ает Opus final-check** — `converged-lenient` остаётся в auto-gate-eligible row Phase D pre-gate. Если хочешь skip Opus — у тебя есть отдельный `--no-final-check`.
+**`--lenient` does NOT skip Opus final-check** — `converged-lenient` is still eligible for the Phase D pre-gate. If you want to skip Opus, use `--no-final-check` (or `final_check: "never"` in config).
 
-**Opt-out**: только через config.json. Поставь `"severity_aware": false` в `~/.claude/plan-tango/config.json` или прогони `/plan-tango:config`. CLI флага намеренно нет (`--lenient` уже занимает explicit per-run polish-stop niche; пара флагов с пересекающейся семантикой смутила бы пользователя).
+**Opt-out**: config-only. Set `"severity_aware": false` in `~/.claude/plan-tango/config.json` or run `/plan-tango:config`. There is no CLI flag on purpose (`--lenient` already occupies the explicit per-run polish-stop niche; two flags with overlapping semantics would confuse users).
 
-## Тихий режим (`--quiet`)
+## Quiet mode (`--quiet`)
 
-По умолчанию скилл печатает 1-2 строки на итерацию (Snapshot, Sending to Codex, verdict counts, Applied N fixes). Для длинных прогонов (8-12 итераций) это шумно.
+By default the skill prints 1–2 lines per iteration (snapshot, sending-to-Codex, verdict counts, applied-N-fixes). For long runs (8–12 iters) that's noisy.
 
-`--quiet` или `quiet: true` в config.json — оставляет только:
-- Phase A heads-up (контракт перед run) + deprecation warnings (если есть)
-- Phase A lock-acquired подтверждение (когда `lock_took_over_stale=true`)
-- **ERROR / MALFORMED verdict lines** — диагностика critical state changes (всегда печатаются, даже в quiet)
-- AskUserQuestion (continue-prompt, manual-required)
-- ABORT/error messages
-- **Phase E §1-§5 — полный отчёт** (header + stats block + convergence table + what Codex caught + narrative)
+`--quiet` (or `quiet: true` in `config.json`) leaves only:
 
-**Что НЕ контролируется флагом**: Bash IN/OUT панели рисует сам Claude Code (включая когда Bash вызовы помечены как allowlisted). Чтобы убрать и эти панели — настрой allowlist через `/fewer-permission-prompts`, тогда Claude Code прячет одобренные вызовы.
+- Phase A heads-up (contract before the run) + deprecation warnings (if any)
+- Phase A lock-acquired confirmation (when `lock_took_over_stale = true`)
+- **`ERROR` / `MALFORMED` verdict lines** — diagnostics for critical state changes (always printed, even in quiet)
+- `AskUserQuestion` (continue-prompt, manual-required)
+- `ABORT` / error messages
+- **Phase E §1+§2+§4 (and §3+§5 when `--verbose-report`) — full report** (always)
 
-CLI: `/plan-tango <slug> --quiet` (или явная форма `/plan-tango:plan-tango <slug> --quiet`)
-Persistent: добавь `"quiet": true` в `~/.claude/plan-tango/config.json` (или прогони `/plan-tango:config`).
+**What this flag does NOT control**: Bash IN/OUT panels are rendered by Claude Code itself (including when calls are allowlisted). To hide those panels too, configure the allowlist via `/fewer-permission-prompts`.
+
+CLI: `/plan-tango <slug> --quiet`. Persistent: add `"quiet": true` to `~/.claude/plan-tango/config.json` (or run `/plan-tango:config`).
 
 ## Fast mode (priority service tier)
 
-Codex поддерживает priority processing tier — ~1.5x скорость за более высокий per-token cost. Включается через `--fast` или `--service-tier fast`:
+Codex supports a priority processing tier — ~1.5× speed at a higher per-token cost. Enable via `--fast` or `--service-tier fast`:
 
 ```
 /plan-tango <slug> --fast
 ```
 
-Под капотом: `-c service_tier="fast"` в `codex exec` argv. Это маппится в `service_tier: "priority"` для OpenAI Responses API.
+Under the hood: `-c service_tier="fast"` in the `codex exec` argv. This maps to `service_tier: "priority"` for the OpenAI Responses API.
 
-**Требования:**
-- `features.fast_mode = true` в `~/.codex/config.toml` (это default в текущем Codex CLI). Проверить:
+**Requirements:**
+- `features.fast_mode = true` in `~/.codex/config.toml` (default in current Codex CLI). Verify:
   ```powershell
   codex features list | Select-String fast_mode    # Windows
   codex features list | grep fast_mode             # POSIX
   ```
-- Если `fast_mode` выключен (`--disable fast_mode` или manual в config) — `service_tier=fast` будет проигнорирован Codex'ом silently.
+- If `fast_mode` is disabled (`--disable fast_mode` or manual in config), `service_tier=fast` is silently ignored by Codex.
 
-**Биллинг**: priority tier идёт по более высокой ставке. Если важно — посмотри [Codex speed docs](https://developers.openai.com/codex/speed) и [OpenAI priority processing](https://developers.openai.com/api/docs/guides/priority-processing).
+**Billing**: priority tier is charged at a higher rate. If this matters, see [Codex speed docs](https://developers.openai.com/codex/speed) and [OpenAI priority processing](https://developers.openai.com/api/docs/guides/priority-processing).
 
-**Альтернатива** — постоянно через profile в `~/.codex/config.toml`:
+**Alternative** — permanently via a profile in `~/.codex/config.toml`:
 ```toml
 [profiles.review-fast]
 service_tier = "fast"
 model_reasoning_effort = "high"
 ```
-Затем: `/plan-tango <slug> --codex-profile review-fast`.
+Then: `/plan-tango <slug> --codex-profile review-fast`.
 
-## Как идёт цикл
+## How the loop runs
 
 ```
 Phase A. Init (init.mjs — single Bash call)
@@ -187,84 +195,85 @@ Phase A. Init (init.mjs — single Bash call)
    (lock acquired BEFORE any state/workspace write; init handles internal
     cleanup if a step after lock-acquire fails)
 
-Phase C. Loop (max-iter раз)
+Phase C. Loop (up to max-iter times)
    integrity check (sha256) → snapshot → prepare-iter.mjs (prompt+params+stub) →
    call run-codex-review.mjs → handle ERROR/MALFORMED → classify findings →
    check stop conditions → apply fixes via Edit → update last_known_hash → refresh lock
 
-Phase D. Final (если status=converged* AND --final-check)
-   pre-gate → Opus final-check → при critical/major: corrective iter →
-   ОДИН Codex re-review
+Phase D. Final (when status=converged* AND --final-check)
+   pre-gate → Opus final-check → on critical/major: corrective iter →
+   ONE Codex re-review
 
 Phase E. Summary
-   print stats → release lock (если acquired) → opt cleanup workspace
+   print stats → run update-check (silent unless newer release) →
+   release lock (if acquired) → optional workspace cleanup
 ```
 
-## Возможные финальные статусы
+## Possible terminal statuses
 
-| Status | Что произошло | Что делать |
+| Status | What happened | What to do |
 |---|---|---|
-| `converged` | Codex дал чистый ALLOW | План готов |
-| `converged-with-polish` | `severity_aware: true` (default), Codex дал BLOCK с only minor/nit | Список polish findings в §6 отчёта; применять вручную если нужно (auto-iter не запускался по design — см. «Severity-aware convergence») |
-| `converged-lenient` | `--lenient` включён, остались только minor/nit (либо severity_aware+lenient путь) | Прочитать оставшиеся nits в ledger / §6, решить вручную |
-| `converged-final` | После Opus final-check без критических замечаний | План готов, прошёл двойную проверку |
-| `manual-required` | Codex предложил развилку (option A/B) или critical/major fix не применяется автоматически | Решить вручную, отредактировать план, опционально `--resume` |
-| `manual-required-after-final` | Opus нашёл проблему, fix требует ручного решения | См. ledger, доделать вручную |
-| `final-check-divergence` | Opus и Codex разошлись на финале | Прочитать оба набора findings, решить вручную |
-| `stuck` | Две итерации подряд возвращают идентичные findings | Codex не понимает плана; перепиши проблемные секции вручную |
-| `oscillating` | Codex флаппит между двумя оценками (X в N-2, Y в N-1, X в N) | Конфликтующие требования; разрешить вручную |
-| `regressed` | Стало больше critical findings после применения правок | Откатиться через snapshot |
-| `max-iter-reached` | Достигнут лимит итераций, на continue-prompt выбран "Stop here" | Прочитать findings, добить вручную или новый прогон с большим `--max-iter` (cap 12) |
-| `aborted-by-user` | На continue-prompt выбран "Abort run" | Lock освобождён, ledger закрыт. State остался — можно сделать `--resume` если передумал |
-| `off-plan-target` | Codex/Opus попросили править файл вне плана | Скилл это запрещает; внести правки в код вручную |
-| `external-modification` | План был отредактирован вне скилла во время цикла | Решить — продолжать с новым состоянием или откатиться |
-| `final-check-malformed` | Opus вернул не-ALLOW/BLOCK даже после retry | Запустить final-check вручную с тем же планом |
-| `final-recheck-error` / `final-recheck-malformed` | Codex re-review после final-fix провалился | Глянь stderr_tail, повторить позже |
+| `converged` | Codex returned a clean ALLOW | Plan is ready |
+| `converged-with-polish` | `severity_aware: true` (default), Codex returned BLOCK with only minor/nit | Polish findings in §6 of the report; apply manually if needed (no auto-iter by design — see "Severity-aware convergence") |
+| `converged-lenient` | `--lenient` set, only minor/nit remained (or severity_aware+lenient path) | Read the remaining nits in the ledger / §6 and decide manually |
+| `converged-final` | After Opus final-check with no critical/major remarks | Plan passed double review |
+| `manual-required` | Codex offered a fork (option A/B) or a critical/major fix can't be auto-applied | Decide manually, edit the plan, optionally `--resume` |
+| `manual-required-after-final` | Opus found an issue whose fix requires manual decision | See ledger, finish manually |
+| `final-check-divergence` | Opus and Codex disagreed on the final pass | Read both finding sets, decide manually |
+| `stuck` | Two consecutive iterations returned identical findings | Codex doesn't understand the plan; rewrite the problematic sections manually |
+| `oscillating` | Codex flaps between two assessments (X in N-2, Y in N-1, X in N) | Conflicting requirements; resolve manually |
+| `regressed` | Critical-finding count grew after applying fixes | Roll back via snapshot |
+| `max-iter-reached` | Iteration cap hit; "Stop here" picked at continue-prompt | Read findings, finish manually or re-run with a larger `--max-iter` (cap 12) |
+| `aborted-by-user` | "Abort run" picked at continue-prompt | Lock released, ledger closed. State preserved — `--resume` if you change your mind |
+| `off-plan-target` | Codex/Opus asked to edit a file outside the plan | Skill forbids it; apply the change to code manually |
+| `external-modification` | Plan was edited outside the skill during the cycle | Decide — continue with the new state or roll back |
+| `final-check-malformed` | Opus returned non-ALLOW/BLOCK even after retry | Run final-check manually with the same plan |
+| `final-recheck-error` / `final-recheck-malformed` | Codex re-review after final-fix failed | Check `stderr_tail`, retry later |
 
-## Артефакты на диске
+## On-disk artifacts
 
-Все файлы лежат рядом с планом в `~/.claude/plans/`:
+All files live next to the plan under `~/.claude/plans/`:
 
 ```
-foo.md                              # сам план (его правит скилл)
-foo.iter1-2026-...bak               # снапшот перед apply iter 1
-foo.iter2-...bak                    # перед iter 2
+foo.md                              # the plan itself (edited by the skill)
+foo.iter1-2026-...bak               # snapshot before iter 1 apply
+foo.iter2-...bak                    # before iter 2
 ...
-foo-tango.state.json             # iter, hashes, settings, repo info
-foo-tango.ledger.json            # все findings + actions по итерациям
-foo-tango.lock                   # active lease (удаляется в Phase E)
-foo-tango.workspace/             # temp prompts/params (cleanup при success)
+foo-tango.state.json                # iter, hashes, settings, repo info
+foo-tango.ledger.json               # all findings + actions per iteration
+foo-tango.lock                      # active lease (removed in Phase E)
+foo-tango.workspace/                # temp prompts/params (cleaned up on success)
   ├── iter1.prompt.md
   ├── iter1.params.json
   └── ...
 ```
 
-**Ledger schema** — что какая запись означает:
+**Ledger schema** — what each entry means:
 
-| `iteration_kind` | Когда |
+| `iteration_kind` | When |
 |---|---|
-| `normal` | Обычная итерация Phase C |
-| `final-fix` | Corrective итерация после Opus critical/major (Phase D 28b) |
-| `final-check-ignored` | Opus нашёл только minor/nit — пропустили |
-| `force-diagnostics` | `--force-final-check` на non-converged status |
+| `normal` | Regular Phase C iteration |
+| `final-fix` | Corrective iteration after Opus critical/major (Phase D 28b) |
+| `final-check-advisory` | Opus polish-only (Phase D 28a-polish) — advisory list, no apply |
+| `final-check-ignored` | Legacy: Opus found only minor/nit — skipped |
 
-| `action` | Когда |
+| `action` | When |
 |---|---|
-| `applied` | Edit прошёл, план изменён |
-| `deferred` | apply-fixes не смог применить (конфликт/ambiguity ИЛИ off-plan minor/nit) |
-| `manual` | Codex предложил несколько вариантов |
-| `ignored_minor_nit` | Final-check minor/nit, не блокирующие |
-| `diagnostic` | Force-diagnostics findings, к плану не применяются |
-| `off_plan_blocked` | Critical/major finding указывал на файл вне плана — заблокировано |
+| `applied` | Edit succeeded, plan modified |
+| `deferred` | apply-fixes couldn't apply (conflict / ambiguity OR off-plan minor/nit) |
+| `manual` | Codex offered multiple variants |
+| `advisory` | Polish-only finding — surfaced in §6, not applied |
+| `ignored_minor_nit` | Final-check minor/nit, non-blocking |
+| `off_plan_blocked` | Critical/major finding pointed at a file outside the plan — blocked |
 
-## Permissions при первом запуске
+## Permissions on first run
 
-Скилл вызывает Bash для node-скриптов. Первый прогон попросит permission на:
+The skill calls Bash for the helper scripts. The first run will request permission for:
 
 ```
 Bash(node *plan-tango/scripts/init.mjs *)              # consolidated Phase A init
 Bash(node *plan-tango/scripts/prepare-iter.mjs *)      # iter{N}.{prompt,params,last-message} builder
-Bash(node *plan-tango/scripts/run-codex-review.mjs *)   # Codex wrapper (spawns codex exec)
+Bash(node *plan-tango/scripts/run-codex-review.mjs *)  # Codex wrapper (spawns codex exec)
 Bash(node *plan-tango/scripts/parse-codex-verdict.mjs *)
 Bash(node *plan-tango/scripts/parse-codex-jsonl.mjs *)
 Bash(node *plan-tango/scripts/load-config.mjs *)
@@ -273,10 +282,12 @@ Bash(node *plan-tango/scripts/snapshot.mjs *)
 Bash(node *plan-tango/scripts/workspace.mjs *)
 Bash(node *plan-tango/scripts/lock.mjs *)
 Bash(node *plan-tango/scripts/apply-fixes.mjs *)
-Bash(codex --version)                                   # version check inside init.mjs
+Bash(node *plan-tango/scripts/update-check.mjs *)      # end-of-Phase-E version check
+Bash(node *plan-tango/scripts/doctor.mjs *)            # diagnostics (when invoked manually)
+Bash(codex --version)                                  # version check inside init.mjs
 Edit(~/.claude/plans/*.md)
 Read(~/.claude/plans/**)
-Read(~/.claude/plan-tango/config.json)                  # persistent defaults (optional file)
+Read(~/.claude/plan-tango/config.json)                 # persistent defaults (optional file)
 Write(~/.claude/plans/*.iter*.bak)
 Write(~/.claude/plans/*-tango.state.json)
 Write(~/.claude/plans/*-tango.ledger.json)
@@ -284,17 +295,17 @@ Write(~/.claude/plans/*-tango.lock)
 Write(~/.claude/plans/*-tango.workspace/**)
 ```
 
-После первого прогона запусти `/fewer-permission-prompts` — он добавит allowlist в `~/.claude/settings.json`, и дальше прогоны будут без вопросов.
+After the first run, invoke `/fewer-permission-prompts` — it adds an allowlist to `~/.claude/settings.json`, and subsequent runs go through without prompts.
 
-**Diagnostics:** при подозрении на проблемы (codex CLI not found, plans dir not writable, lock stuck) запусти `node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/doctor.mjs` — проверит codex CLI, парсинг user-config, write-доступ к `~/.claude/plans/`, lock acquire/release цикл и контракт `run-codex-review.mjs` на bad input. Все проверки read-only / dry-run; пробные файлы убираются автоматически. Добавь `--json` для машинно-читаемого вывода.
+**Diagnostics**: if anything looks off (Codex CLI not found, plans dir not writable, lock stuck), run `node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/doctor.mjs` — it checks the Codex CLI, user-config parsing, write access to `~/.claude/plans/`, the lock acquire/release cycle, and `run-codex-review.mjs` error handling. All checks are read-only / dry-run; probe files are removed automatically. Add `--json` for machine-readable output.
 
-### Plan mode + paths под `~/.claude/plans/` (важно)
+### Plan mode + paths under `~/.claude/plans/` (important)
 
-В **plan mode** Claude Code применяет дополнительные ограничения: даже при `defaultMode: "acceptEdits"` и `skipAutoPermissionPrompt: true` любой `Edit`/`Write` на путь **вне текущего VS Code workspace folder ИЛИ вне `permissions.additionalDirectories`** требует approval prompt. Опция «Yes, allow all edits this session» в plan mode действует только на конкретный файл — следующий Write на другой файл снова прокидывает prompt.
+In **plan mode**, Claude Code applies additional restrictions: even with `defaultMode: "acceptEdits"` and `skipAutoPermissionPrompt: true`, any `Edit`/`Write` to a path **outside the current VS Code workspace folder OR outside `permissions.additionalDirectories`** requires an approval prompt. The "Yes, allow all edits this session" option applies only to that specific file — the next `Write` to a different file re-prompts.
 
-Скилл пишет state/ledger/snapshot/workspace files под `~/.claude/plans/<slug>-tango.*`, что **обычно вне твоего рабочего workspace** (например, при работе из `D:\dev\my-project\` пути под `C:\Users\<you>\.claude\plans\` чужие). В plan mode это даёт по 5–10+ approval prompts за один прогон.
+The skill writes state / ledger / snapshot / workspace files under `~/.claude/plans/<slug>-tango.*`, which is **usually outside your active workspace** (e.g. when working from `D:\dev\my-project\`, paths under `C:\Users\<you>\.claude\plans\` are foreign). In plan mode this triggers 5–10+ approval prompts per run.
 
-**One-time fix** в `~/.claude/settings.json` → `permissions`:
+**One-time fix** in `~/.claude/settings.json` → `permissions`:
 
 ```json
 {
@@ -310,91 +321,113 @@ Write(~/.claude/plans/*-tango.workspace/**)
 }
 ```
 
-**Почему это нужно отдельно от обычного allowlist:**
-- `additionalDirectories` расширяет scope `acceptEdits` за пределы workspace — **необходимо** для путей под `~/.claude/`, которые иначе попадают под protected-paths policy.
-- `Edit(...)` rules покрывают built-in file-editing tools в целом — **важнее** чем `Write(...)`. Указывай оба для надёжности.
-- Tilde-форма (`~/.claude/plans/**`) работает кросс-платформенно. Windows-форма `Edit(C:\\Users\\<you>\\.claude\\plans\\**)` — fallback, если tilde не resolve'ится.
+**Why this is separate from the regular allowlist:**
 
-**После применения patch'а нужен рестарт активной Claude Code сессии** — VS Code extension кеширует permissions при старте session, изменения settings.json не подхватываются на лету. Закрой окно VS Code (или re-open workspace) → новая сессия загрузит обновлённые permissions.
+- `additionalDirectories` extends the `acceptEdits` scope beyond the workspace — **required** for paths under `~/.claude/`, which would otherwise fall under the protected-paths policy.
+- `Edit(...)` rules cover the built-in file-editing tools overall — **more important** than `Write(...)`. Specify both for reliability.
+- The tilde form (`~/.claude/plans/**`) works cross-platform. The Windows form `Edit(C:\\Users\\Alice\\.claude\\plans\\**)` is a fallback if tilde doesn't resolve.
 
-**Альтернатива** (если не хочешь править глобальные settings): запускай `/plan-tango` **вне** plan mode. Plan mode для скилла избыточен — план уже написан, дальше только review loop. Обычный режим с `defaultMode: "acceptEdits"` даёт silent flow без дополнительных настроек.
+**A restart of the active Claude Code session is required after the patch** — the VS Code extension caches permissions at session start; `settings.json` changes aren't picked up live. Close the VS Code window (or re-open the workspace) → the new session loads the updated permissions.
 
-## Прерывание и возобновление
+**Alternative** (if you don't want to edit global settings): run `/plan-tango` **outside** plan mode. Plan mode isn't required for the skill — the plan is already written, the rest is just the review loop. Normal mode with `defaultMode: "acceptEdits"` gives a silent flow without extra setup.
 
-**Ctrl+C / прерывание**: state.json остаётся консистентным (обновляется после каждой apply-фазы). Lock остаётся на 30 минут — после этого считается stale и автоматически перехватывается следующим запуском.
+## Interruption and resume
 
-**Возобновить с того же места**:
+**Ctrl+C / interrupt**: `state.json` stays consistent (updated after every apply phase). The lock remains for 30 minutes — after that it's considered stale and auto-overridden by the next run.
+
+**Resume from where you left off**:
 ```
 /plan-tango <slug-or-path> --resume
 ```
-Скилл прочитает state, проверит что план не менялся вне скилла (через `last_known_plan_hash`), и продолжит с следующей итерации.
 
-`--resume` БЕЗ явного slug/path откажется — это намеренно (защита от того что за время паузы появился новый план и `--resume` подхватит не тот файл).
+The skill reads state, verifies the plan wasn't modified outside the skill (via `last_known_plan_hash`), and continues from the next iteration.
+
+`--resume` WITHOUT an explicit slug/path is refused — by design (defense against the newest-plan-fallback grabbing a different file that appeared between runs).
 
 ## Troubleshooting
 
-**"Lock held by another session"** — либо реально другой запуск работает, либо предыдущий упал и lock не успел истечь.
-- Проверь: `node "${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/lock.mjs" inspect --slug <slug>` (или абсолютный путь под ~/.claude/plugins/marketplaces/plan-tango/...)
-- Если параллельного запуска точно нет → подожди до 30 мин (auto-stale) или передай `--takeover` после inspect.
+**"Lock held by another session"** — either another run is actually in progress, or a previous run crashed and the lock hasn't expired yet.
 
-**"Plan modified outside skill since last completed iteration"** — кто-то (или ты сам в редакторе) поменял план между итерациями.
-- Если изменения важны → не делай `--resume`, начни новый прогон, скилл подхватит новое состояние.
-- Если изменения случайные → откати через `cp foo.iter{N}.bak foo.md` и `--resume`.
+- Check: `node "${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/lock.mjs" inspect --slug <slug>` (or the absolute path under `~/.claude/plugins/marketplaces/plan-tango/...`).
+- If no parallel run is in progress → wait up to 30 minutes (auto-stale) or pass `--takeover` after `inspect`.
 
-**"Codex CLI not found on PATH"** — Codex CLI не установлен или не виден из текущей оболочки.
-- Проверка: `codex --version` (должен напечатать версию).
-- Установка: `npm install -g @openai/codex`.
-- Авторизация: `codex login` (или `/codex:setup` из плагина openai-codex, если он установлен).
+**"Plan modified outside skill since last completed iteration"** — someone (or you in the editor) changed the plan between iterations.
 
-**`status=stuck` или `oscillating`** — Codex упёрся. Прочитай ledger, найди проблемную секцию, перепиши её вручную, затем новый прогон скилла.
+- If the changes matter → don't `--resume`; start a fresh run and the skill will pick up the new state.
+- If the changes were accidental → roll back via `cp foo.iter{N}.bak foo.md` and `--resume`.
 
-**`status=off-plan-target`** — Codex/Opus попросили править файл вне плана.
-- Нормально: скилл правит ТОЛЬКО plan-файл. Если finding осмысленный — внеси изменение в код руками отдельно.
-- Если finding некорректный — он будет логирован в ledger как `off_plan_blocked` с `requested_file_path` и `suggested_fix`.
+**"Codex CLI not found on PATH"** — Codex CLI isn't installed or isn't visible from the current shell.
 
-**Ничего не происходит после вызова run-codex-review.mjs** — Codex может думать 30-90 секунд на effort=high. Это норма.
+- Verify: `codex --version` (should print a version).
+- Install: `npm install -g @openai/codex`.
+- Auth: `codex login` (or `/codex:setup` from the `openai-codex` plugin if installed).
 
-## Структура plugin (для разработчика)
+**`status=stuck` or `oscillating`** — Codex is jammed. Read the ledger, find the problematic section, rewrite it manually, then re-run the skill.
+
+**`status=off-plan-target`** — Codex/Opus asked to edit a file outside the plan.
+
+- Expected: the skill edits ONLY the plan file. If the finding is meaningful → make the code change manually.
+- If the finding is wrong — it's logged in the ledger as `off_plan_blocked` with `requested_file_path` and `suggested_fix`.
+
+**Nothing happens after `run-codex-review.mjs` is called** — Codex can think for 30–90 seconds on `effort=high`. That's normal.
+
+## Plugin structure (for developers)
 
 ```
 ~/.claude/plugins/marketplaces/plan-tango/
 ├── .claude-plugin/
 │   └── marketplace.json                      # marketplace manifest
+├── LICENSE                                   # MIT
+├── README.md / README.ru.md                  # OSS pitch (English / Russian)
+├── CHANGELOG.md                              # release notes
 └── plugins/plan-tango/
     ├── .claude-plugin/
     │   └── plugin.json                       # plugin manifest
-    ├── README.md                             # этот файл (для пользователя)
+    ├── README.md                             # this file (English)
+    ├── README.ru.md                          # Russian translation
     ├── agents/
     │   └── plan-final-checker.md             # opus, raw ALLOW/BLOCK → registered as plan-tango:plan-final-checker (Phase D only)
-    └── skills/plan-tango/
-        ├── SKILL.md                          # orchestrator instructions
-        ├── user-config.example.json          # образец persistent defaults
-        ├── scripts/
-        │   ├── init.mjs                      # Phase A in one Bash call: validate + codex-cli check + repo + load-config + lock + state init/resume + workspace
-        │   ├── doctor.mjs                    # diagnostics one-liner: codex CLI, config parse, plans dir writable, lock cycle, wrapper error path
-        │   ├── load-config.mjs               # CLI flags + user-config + defaults → merged settings
-        │   ├── prepare-iter.mjs              # builds iter{N}.{prompt.md,params.json,last-message.txt} in one Bash call
-        │   ├── run-codex-review.mjs          # spawn() codex exec --json (resolves underlying codex.js); retries empty output once
-        │   ├── parse-codex-jsonl.mjs         # JSONL events → session_id + diagnostics
-        │   ├── parse-codex-verdict.mjs       # ALLOW/BLOCK + findings parser (text/file/json)
-        │   ├── plan-paths.mjs                # validate/newest/list-recent/resolve-repo/hash
-        │   ├── snapshot.mjs                  # fs.copyFileSync с timestamp+hash
-        │   ├── workspace.mjs                 # ensure/cleanup с realpath+lstat guard
-        │   ├── lock.mjs                      # lease-lock с session_id
-        │   └── apply-fixes.mjs               # pure planner (auto/deferred/manual)
-        └── references/
-            ├── review-prompt-template.md     # XML промпт для Codex (с {{RESET_BLOCK}} для continue mode)
-            └── verdict-contract.md           # формат verdict с примерами
+    └── skills/
+        ├── plan-tango/                       # main loop skill
+        │   ├── SKILL.md                      # orchestrator instructions
+        │   ├── user-config.example.json      # sample persistent defaults
+        │   ├── scripts/
+        │   │   ├── init.mjs                  # Phase A in one Bash call: validate + codex-cli check + repo + load-config + lock + state init/resume + workspace
+        │   │   ├── doctor.mjs                # diagnostics one-liner
+        │   │   ├── load-config.mjs           # CLI flags + user-config + defaults → merged settings
+        │   │   ├── prepare-iter.mjs          # builds iter{N}.{prompt.md,params.json,last-message.txt} in one Bash call
+        │   │   ├── run-codex-review.mjs      # spawn() codex exec --json (resolves underlying codex.js); retries empty output once
+        │   │   ├── parse-codex-jsonl.mjs     # JSONL events → session_id + diagnostics
+        │   │   ├── parse-codex-verdict.mjs   # ALLOW/BLOCK + findings parser (text/file/json)
+        │   │   ├── plan-paths.mjs            # validate / newest / list-recent / resolve-repo / hash
+        │   │   ├── snapshot.mjs              # fs.copyFileSync with timestamp+hash
+        │   │   ├── workspace.mjs             # ensure / cleanup with realpath+lstat guard
+        │   │   ├── lock.mjs                  # lease-lock with session_id
+        │   │   ├── apply-fixes.mjs           # pure classifier (auto / deferred / manual)
+        │   │   └── update-check.mjs          # end-of-Phase-E version check vs GitHub
+        │   └── references/
+        │       ├── review-prompt-template.md # XML prompt for Codex (with {{RESET_BLOCK}} for continue mode)
+        │       └── verdict-contract.md       # verdict format with examples
+        └── config/                           # /plan-tango:config wizard
+            ├── SKILL.md                      # wizard orchestrator instructions
+            └── scripts/
+                └── write-config.mjs          # atomic config writer + validator
 ```
 
-**Persistent state** (вне plugin dir):
-- `~/.claude/plan-tango/config.json` — пользовательские дефолты (опционально, копируется из `user-config.example.json`)
-- `~/.claude/plans/<slug>.md` — планы
-- `~/.claude/plans/<slug>-tango.{state,ledger,lock}.json` — runtime artefacts
-- `~/.claude/plans/<slug>-tango.workspace/` — temp prompts/params (cleanup при success)
+**Persistent state** (outside the plugin dir):
 
-## Зависимости
+- `~/.claude/plan-tango/config.json` — user defaults (optional; copy from `user-config.example.json`).
+- `~/.claude/plan-tango/.update-cache.json` — update-check cache (auto-managed by `update-check.mjs`).
+- `~/.claude/plans/<slug>.md` — plans.
+- `~/.claude/plans/<slug>-tango.{state,ledger,lock}.json` — runtime artifacts.
+- `~/.claude/plans/<slug>-tango.workspace/` — temp prompts/params (cleaned up on success).
 
-- **Node.js** 18+ (любая версия с поддержкой `node:*` импортов).
-- **Codex CLI** на PATH. Установка: `npm install -g @openai/codex`. Авторизация: `codex login`.
-- (Опционально) Плагин `openai-codex` для Claude Code — даёт `/codex:setup` UX-обёртку для авторизации, но **не обязателен** для работы plan-tango: скил вызывает `codex exec` напрямую через resolve underlying `codex.js`.
+## Dependencies
+
+- **Node.js** 18+ (any version with `node:*` imports).
+- **Codex CLI** on `PATH`. Install: `npm install -g @openai/codex`. Auth: `codex login`.
+- (Optional) The `openai-codex` plugin for Claude Code — provides the `/codex:setup` UX wrapper for auth, but **not required** for plan-tango: the skill calls `codex exec` directly via the underlying `codex.js`.
+
+---
+
+**License:** MIT (see [LICENSE](../../LICENSE)) · **Author:** Egor Sokolov · Telegram: [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata)

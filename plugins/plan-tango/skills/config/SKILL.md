@@ -9,7 +9,7 @@ allowed-tools:
 ---
 
 <objective>
-Edit `~/.claude/plan-tango/config.json` interactively. Cover all configurable keys (model, effort, max_iter, thread_mode, final_check, lenient, service_tier, codex_profile, extra_codex_config, quiet, severity_aware). Validate the merged result before writing.
+Edit `~/.claude/plan-tango/config.json` interactively. Cover all configurable keys (model, effort, max_iter, thread_mode, final_check, lenient, service_tier, codex_profile, extra_codex_config, quiet, severity_aware, verbose_report, update_check). Validate the merged result before writing.
 </objective>
 
 <process>
@@ -39,7 +39,7 @@ node "${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/load-config.mjs" --merge -
 
    Recovery flow:
    - Print warning: `"⚠ Existing ~/.claude/plan-tango/config.json is invalid: <error.detail> (field=<error.field>). Wizard will use built-in defaults as current state and write a fresh replacement (the broken file is preserved on disk until Step 6 atomic rename overwrites it)."`
-   - Set `merged` to built-in defaults: `{model:null, effort:"high", max_iter:6, thread_mode:"continue", final_check:"auto", lenient:false, service_tier:null, codex_profile:null, extra_codex_config:[], quiet:false, severity_aware:true}`. Set all `sources[k] = "default"`.
+   - Set `merged` to built-in defaults: `{model:null, effort:"high", max_iter:6, thread_mode:"continue", final_check:"never", lenient:false, service_tier:null, codex_profile:null, extra_codex_config:[], quiet:false, severity_aware:true, verbose_report:false, update_check:true}`. Set all `sources[k] = "default"`.
    - **`extra_codex_config` recovery**: attempt to read & parse the broken `config.json` as raw JSON via Read tool + `JSON.parse`. If it parses to an array of `"key=value"` strings → preserve. If parse fails OR field is absent OR items don't match `key=value` shape → use `[]` and warn separately: `"⚠ Could not preserve extra_codex_config from broken config — falling back to []. If you had custom -c keys, re-add them after the wizard finishes."`
    - Continue to Step 2. Step 6's atomic rename overwrites the broken file with the validated candidate.
 
@@ -59,7 +59,7 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 1. `effort` — current value as first option (Recommended). Curated options (4 + AskUserQuestion's built-in **Other**): `high`, `medium`, `low`, `xhigh`. **Other** path covers schema-valid `none`/`minimal` (free-text input; validated via `load-config.mjs` step 6 — invalid → re-ask).
 2. `max_iter` — options (4 + Other): `6`, `8`, `10`, `12`. **Other** for any integer 1..12.
 3. `thread_mode` — options: `continue`, `fresh`.
-4. `final_check` — options: `auto`, `force`, `never`.
+4. `final_check` — options: `never`, `always`. (Deprecated `auto` and `force` are accepted by the loader but auto-migrated with a warning — wizard never writes them.)
 
 **Batch 2 (4 questions):**
 5. `lenient` — options: `false (strict)`, `true (stop at no critical/major)`.
@@ -67,11 +67,14 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 7. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
 8. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only verdicts (default behavior)`. Label `false`, description `Strict: always run corrective iter on any BLOCK`.
 
-**Batch 3 (2 questions, advanced):**
+**Batch 3 (3 questions, advanced):**
 9. `model` — options (3 + Other): `null (Codex picks)`, `gpt-5`, `gpt-5.5`. **Other** = free-text model name.
 10. `codex_profile` — options (1 + Other): `null (none)`. **Other** = profile name (any non-empty string).
+11. `verbose_report` — options (binary, labels ≤25 chars): label `false (terse)`, description `Default — render §1+§2+§4 (and §6 polish-only) only`. Label `true (full report)`, description `Also render §3 convergence table and §5 narrative`.
 
 **`extra_codex_config`** — preserved as-is from current `merged.extra_codex_config` (default `[]`). Print after batch 3: "extra_codex_config preserved as-is. To edit, hand-edit `~/.claude/plan-tango/config.json` after wizard finishes."
+
+**`update_check`** — preserved as-is from current `merged.update_check` (default `true`). No UI question (set-and-forget; mirrors `extra_codex_config` preservation pattern). If the user has opted out via hand-edit (`"update_check": false`), the wizard MUST NOT silently re-enable it — see Step 3 `newConfig` template.
 
 **Per-question UX:**
 - **Recommended option = current value**.
@@ -100,14 +103,16 @@ const newConfig = {
   effort: <answer>,                  // string in schema enum
   max_iter: <answer>,                // integer 1..12
   thread_mode: <answer>,             // "continue" | "fresh"
-  final_check: <answer>,             // "auto" | "force" | "never"
+  final_check: <answer>,             // "never" | "always" (wizard never writes deprecated "auto" / "force")
   lenient: <answer>,                 // boolean
   service_tier: <answer>,            // null | "fast" | "flex"
   quiet: <answer>,                   // boolean
   severity_aware: <answer>,          // boolean — config-only knob, no CLI flag (see plan-tango README)
+  verbose_report: <answer>,          // boolean — config-only knob (also surfaced as --verbose-report CLI flag)
   model: <answer>,                   // null | non-empty string
   codex_profile: <answer>,           // null | non-empty string
-  extra_codex_config: <preserved>    // from current merged.extra_codex_config (default [])
+  extra_codex_config: <preserved>,   // from current merged.extra_codex_config (default [])
+  update_check: <preserved>          // from current merged.update_check (default true) — config-only opt-out for end-of-Phase-E version check; MUST be preserved across wizard runs or hand-edited "false" would be silently lost
 };
 ```
 
@@ -143,7 +148,7 @@ Flow:
    - Content: `JSON.stringify(newConfig, null, 2) + "\n"` — already sanitized at Step 3 (no `_*` keys).
    - `mkdir -p ~/.claude/plan-tango` happens automatically when Write creates an absent parent.
 
-2. **Skill — invoke wrapper** via Bash (paths double-quoted because plugin paths contain spaces, e.g. `C:\Users\Egor Sokolov\...`):
+2. **Skill — invoke wrapper** via Bash (paths double-quoted because plugin paths can contain spaces, e.g. `C:\Users\Alice Smith\...`):
    ```
    node "${CLAUDE_PLUGIN_ROOT}/skills/config/scripts/write-config.mjs" --file "<abs-path-to-tmp-file>"
    ```

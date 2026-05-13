@@ -2,3 +2,17 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# plan-tango runtime artefacts (created under ~/.claude/plans/ by the live skill;
+# listed here as a safety net if someone runs the skill from inside this repo).
+*.bak
+*-tango.workspace/
+*-tango.state.json
+*-tango.lock
+*-tango.ledger.json
+.update-cache.json
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
