@@ -206,6 +206,9 @@ function resolveRepoCmd(opts) {
   // We still prefer a "real" repo_root when one is detectable: plan-text
   // explicit path > git toplevel > cwd. This affects the cwd Codex spawns in,
   // not the evidence-availability flag.
+  //
+  // Downstream contract: run-codex-review.mjs always passes
+  // --skip-git-repo-check to Codex; the field is informational, not a gate.
   const cwd = opts.cwd && typeof opts.cwd === "string" ? path.resolve(opts.cwd) : process.cwd();
   const planPath = opts.plan && typeof opts.plan === "string" ? opts.plan : null;
   const candidates = [];

@@ -156,17 +156,18 @@ function buildCodexArgs(params, { resumeThreadId }) {
   const serviceTier = s.service_tier || null;
   const codexProfile = s.codex_profile || null;
   const extraCodexConfig = Array.isArray(s.extra_codex_config) ? s.extra_codex_config : [];
-  const repoEvidenceAvailable = params.repo_evidence_available === true;
 
   const args = [
     "exec",
     "-C", params.repo_root,
     "--json",
     "--sandbox", "read-only",
+    // v0.2 contract: repo_evidence_available is always true (see
+    // plan-paths.mjs --resolve-repo). Codex's git-repo trust check is
+    // redundant with sandbox=read-only + prompt grounding rules and
+    // refuses non-git cwds with a confusing error. Pass unconditionally.
+    "--skip-git-repo-check",
   ];
-  if (!repoEvidenceAvailable) {
-    args.push("--skip-git-repo-check");
-  }
   args.push("-o", params.output_last_message_file);
 
   // 1. profile FIRST (base layer)
