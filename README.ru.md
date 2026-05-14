@@ -25,21 +25,25 @@ plan-tango прогоняет этот цикл сам. Claude и Codex рабо
 
 ## Установка
 
-**Зависимости.** Claude Code 2.x, Node.js 18+, Codex CLI на `PATH`:
+Понадобится: Claude Code 2.x, Node.js 18+.
+
+**1. Поставь Codex CLI** — в терминале (macOS/Linux) или PowerShell (Windows), вне Claude Code. Это разовая штука: plan-tango внутри дёргает именно эту установку.
 
 ```bash
 npm install -g @openai/codex
 codex login
 ```
 
-**Подключи маркетплейс и поставь плагин:**
+**2. Поставь сам плагин** — это уже внутри Claude Code-сессии. Команды ниже — slash-команды, набираешь прямо в чате с агентом:
 
 ```
 /plugin marketplace add egsok/plan-tango
 /plugin install plan-tango@plan-tango
 ```
 
-Перезапусти сессию Claude Code — плагин регистрирует скилл, скрипты и агент на старте сессии, на лету это не подхватится.
+Альтернатива — попросить агента: «установи мне plan-tango из github.com/egsok/plan-tango». Claude разберётся, что делать, и поможет.
+
+**3. Перезапусти сессию Claude Code** — плагин регистрирует скилл, скрипты и агент на старте сессии, на лету это не подхватится.
 
 ## Использование
 

@@ -25,21 +25,25 @@ plan-tango runs that loop on its own. Claude and Codex work as a pair; the plugi
 
 ## Install
 
-**Prerequisites:** Claude Code 2.x, Node.js 18+, Codex CLI on `PATH`:
+Prerequisites: Claude Code 2.x, Node.js 18+.
+
+**1. Install Codex CLI** — in your terminal (macOS/Linux) or PowerShell (Windows), outside Claude Code. One-time setup: plan-tango calls into this Codex install at runtime.
 
 ```bash
 npm install -g @openai/codex
 codex login
 ```
 
-**Add the marketplace and install the plugin:**
+**2. Install the plugin** — inside a Claude Code session. The commands below are slash commands; type them directly in the chat with the agent:
 
 ```
 /plugin marketplace add egsok/plan-tango
 /plugin install plan-tango@plan-tango
 ```
 
-Then restart your Claude Code session — the plugin's skill, scripts, and agent are registered at session start, not live.
+Or just ask the agent: "install plan-tango from github.com/egsok/plan-tango". Claude will figure out the commands and walk you through.
+
+**3. Restart your Claude Code session** — the plugin's skill, scripts, and agent are registered at session start, not live.
 
 ## Usage
 
