@@ -21,7 +21,7 @@
 
 More than once I've caught myself sending plans from Claude into Codex by hand. GPT's feedback is usually useful, and one round rarely closes it. So I'd write the plan, paste it into Codex, wait for the findings, bring them back to Claude, ask to apply, send the updated plan to Codex for another round, wait for the next batch of findings, bring those back. And again. Between rounds you wait, sometimes lose track of which terminal has the latest verdict and is waiting on you.
 
-plan-tango runs that loop on its own. Claude and Codex work as a pair; the plugin passes context between them and applies fixes to the plan. Default budget is 6 iterations, hard cap 12. The plugin will stop sooner if there's nothing important left to flag. You stay in plan mode and can step away to do something else; when a question comes up that needs your call, the plugin pauses and asks. For time-pressed runs (or just when you have Codex quota to spare), `--fast` flips on Codex's priority service tier (~1.5× faster).
+plan-tango runs that loop on its own. Claude and Codex work as a pair; the plugin passes context between them and applies fixes to the plan. Default budget is up to 6 iterations, hard cap 12. The plugin will stop sooner if there's nothing important left to flag. You stay in plan mode and can step away to do something else; when a question comes up that needs your call, the plugin pauses and asks. For time-pressed runs (or just when you have Codex quota to spare), `--fast` flips on Codex's priority service tier (~1.5× faster).
 
 ## Install
 
