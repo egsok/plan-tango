@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hero.png" alt="plan-tango — Claude and Codex dancing on one plan" width="400">
+  <img src="docs/hero.png" alt="plan-tango — Claude and Codex dancing on one plan" width="640">
 </p>
 
 <h1 align="center">plan-tango</h1>
