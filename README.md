@@ -34,16 +34,21 @@ npm install -g @openai/codex
 codex login
 ```
 
-**2. Install the plugin** — inside a Claude Code session. The commands below are slash commands; type them directly in the chat with the agent:
+**2. Install the plugin** — inside a Claude Code session. The two slash commands below go directly in the chat with the agent, **one per message** (Claude Code treats each chat message as a single command — pasting both at once jams the second one into the URL of the first):
 
 ```
 /plugin marketplace add egsok/plan-tango
+```
+
+Wait for the marketplace to be added, then:
+
+```
 /plugin install plan-tango@plan-tango
 ```
 
 Or just ask the agent: "install plan-tango from github.com/egsok/plan-tango". Claude will figure out the commands and walk you through.
 
-**3. Restart your Claude Code session** — the plugin's skill, scripts, and agent are registered at session start, not live.
+**3. Reload plugins** — run `/reload-plugins` in the same chat to pick up the new skill, scripts, and agent without leaving the session. (A full Claude Code restart works too, if you prefer.)
 
 ## Usage
 
