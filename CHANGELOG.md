@@ -3,6 +3,15 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-14
+
+### Fixed
+- **`--skip-git-repo-check` no longer gated** — `run-codex-review.mjs` now always passes the flag. The previous `repo_evidence_available`-based gate was dead code since v0.2 made the field permanently `true`, so Codex refused to run from non-git cwds with a confusing `Not inside a trusted directory` error at iter 1. Plan-tango now works from any directory.
+
+### Docs
+- **README install** — two slash commands split into separate code blocks with an explicit "send as separate messages" note (Claude Code treats one chat message as one command; pasting both at once jammed the second into the URL of the first). Step 3 now suggests `/reload-plugins` instead of a full session restart.
+- **README update** — replaced the bogus `/plugin update plan-tango@plan-tango` slash command (Claude Code 2.x has no such form; it falls through to the `/plugin` UI) with the actual update flow via **Marketplaces → plan-tango → Update**.
+
 ## [0.2.0] — first public release
 
 First version published to GitHub as a Claude Code plugin marketplace.
@@ -34,4 +43,5 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.2.1]: https://github.com/egsok/plan-tango/releases/tag/v0.2.1
 [0.2.0]: https://github.com/egsok/plan-tango/releases/tag/v0.2.0

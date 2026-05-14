@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.2.0-green" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/version-0.2.1-green" alt="Version 0.2.1">
   <a href="README.md"><img src="https://img.shields.io/badge/lang-en-red" alt="Read in English"></a>
 </p>
 
@@ -74,13 +74,9 @@ codex login
 
 ## Обновление
 
-Вручную:
+В Claude Code открой `/plugin → Marketplaces → plan-tango → Update`. Claude Code подтянет маркетплейс и переустановит плагин, если опубликована новая `version`.
 
-```
-/plugin update plan-tango@plan-tango
-```
-
-Автообновление включается отдельно: `/plugin → Marketplaces → plan-tango → Enable auto-update`. У сторонних маркетплейсов автообновление по умолчанию выключено — это политика Claude Code, не plan-tango.
+Автообновление включается там же: **Enable auto-update**. У сторонних маркетплейсов оно по умолчанию выключено — это политика Claude Code, не plan-tango.
 
 Независимо от этого plan-tango в конце каждого прогона сам смотрит выпуски (releases) на GitHub — не чаще раза в 7 дней, тихо падает при проблемах с сетью — и допечатывает одну строку, если появился свежий тег. Отключить — `update_check: false` в `~/.claude/plan-tango/config.json`.
 

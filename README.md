@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.2.0-green" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/version-0.2.1-green" alt="Version 0.2.1">
   <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-ru-red" alt="Read in Russian"></a>
 </p>
 
@@ -74,13 +74,9 @@ Plus the smaller stuff: per-plan lock file (two parallel runs on the same plan c
 
 ## Update
 
-Manual:
+Open `/plugin` in Claude Code, go to **Marketplaces → plan-tango**, and pick **Update**. Claude Code pulls the marketplace and reinstalls if a newer `version` is published.
 
-```
-/plugin update plan-tango@plan-tango
-```
-
-Auto-update is opt-in per marketplace: open `/plugin`, navigate to **Marketplaces → plan-tango → Enable auto-update**. Third-party marketplaces have auto-update off by default — that's Claude Code policy, not a plan-tango choice.
+Auto-update is opt-in per marketplace: same menu, **Enable auto-update**. Third-party marketplaces have auto-update off by default — that's Claude Code policy, not a plan-tango choice.
 
 Independent of that, plan-tango itself checks GitHub releases at the end of each run (at most once per 7 days, fails silently on network issues) and prints a one-line notice if a newer tag is out. Opt out via `update_check: false` in `~/.claude/plan-tango/config.json`.
 
