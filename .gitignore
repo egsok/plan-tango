@@ -16,3 +16,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Claude Code per-clone session-local settings (allowlists, etc.).
+# The plugin's manifest dir is .claude-plugin/ — this pattern does NOT match it.
+.claude/
