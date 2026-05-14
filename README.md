@@ -5,8 +5,8 @@
 <h1 align="center">plan-tango</h1>
 
 <p align="center">
-  <em>Two AIs reviewing one plan in a loop.</em><br>
-  Claude Code drafts → Codex (gpt-5) critiques → Claude applies fixes → repeat until clean <code>ALLOW</code>.
+  <em>A Claude Code plugin that runs a Claude ↔ Codex plan-review loop on its own.<br>
+  Run one command, come back to a polished plan.</em>
 </p>
 
 <p align="center">
@@ -17,9 +17,11 @@
 
 ---
 
-Once a plan in plan mode is dense enough to feel risky, the usual workflow is: open Codex in a second terminal, paste the plan, wait for the review, paste the findings back into Claude, apply, switch back to Codex to see what's left. plan-tango runs that loop with one command.
+**plan-tango** is a Claude Code plugin that runs a plan-review loop between Claude and Codex (gpt-5) with a single command.
 
-The skill reads your active plan file under `~/.claude/plans/`, spawns `codex exec` with a structured review prompt, parses the verdict (`ALLOW` / `BLOCK` + findings), applies any fixes back into the plan via `Edit`, and iterates — default budget 6 iterations, hard cap 12. You stay in plan mode the whole time.
+More than once I've caught myself sending plans from Claude into Codex by hand. GPT's feedback is usually useful, and one round rarely closes it. So I'd write the plan, paste it into Codex, wait for the findings, bring them back to Claude, ask to apply, open Codex again to see what's left. And again. Between rounds you wait, sometimes lose track of which terminal has the latest verdict and is waiting on you.
+
+plan-tango runs that loop on its own. Claude and Codex work as a pair; the plugin passes context between them and applies fixes to the plan. Default budget is 6 iterations, hard cap 12. The plugin will stop sooner if there's nothing important left to flag. You stay in plan mode and can step away to do something else; when a question comes up that needs your call, the plugin pauses and asks. For time-pressed runs (or just when you have Codex quota to spare), `--fast` flips on Codex's priority service tier (~1.5× faster).
 
 ## Install
 
