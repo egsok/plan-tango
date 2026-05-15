@@ -91,8 +91,8 @@ Use AskUserQuestion (single question, two options):
 - Question: `Update plan-tango from v<CURRENT> to v<LATEST>?`
 - Header: `Update?`
 - Options:
-  - Label `Yes, update now`, description `Run git fetch + git reset --hard v<LATEST> in <MARKETPLACE_DIR>.`
-  - Label `Cancel`, description `Leave current version in place.`
+  - Label `Yes, update now`, description `Pull v<LATEST> from GitHub and overwrite the local plugin install.`
+  - Label `Cancel`, description `Leave the current version in place.`
 
 If user picks `Cancel` → print `Update cancelled.` → STOP.
 

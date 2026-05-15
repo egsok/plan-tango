@@ -3,6 +3,11 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-05-15
+
+### Changed
+- **`/plan-tango:update` confirm prompt — less technical.** The "Yes, update now" option's description used to say `Run git fetch + git reset --hard v<LATEST> in <MARKETPLACE_DIR>.` — exposing internals end users shouldn't have to parse. Now reads `Pull v<LATEST> from GitHub and overwrite the local plugin install.`. Behavior is unchanged.
+
 ## [0.5.1] — 2026-05-15
 
 ### Fixed
@@ -97,6 +102,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.5.2]: https://github.com/egsok/plan-tango/releases/tag/v0.5.2
 [0.5.1]: https://github.com/egsok/plan-tango/releases/tag/v0.5.1
 [0.5.0]: https://github.com/egsok/plan-tango/releases/tag/v0.5.0
 [0.4.0]: https://github.com/egsok/plan-tango/releases/tag/v0.4.0
