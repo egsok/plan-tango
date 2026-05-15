@@ -3,14 +3,22 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-05-15
+
+### Fixed
+- **SessionStart update notice is now actually visible.** The 0.3.1 hook printed plain text to stdout, which Claude Code feeds to system-reminder context (visible only via Ctrl+O transcript) rather than the user-visible chat — users reported seeing nothing on session start despite an available update. The hook now emits a JSON response with `systemMessage` (Claude Code's user-visible "warning shown to the user" channel for hooks) plus a `hookSpecificOutput.additionalContext` fallback that instructs Claude to surface the notice in its first response if `systemMessage` doesn't render in the current client.
+
+### Changed
+- **Plugin manifest declares `hooks` explicitly.** Belt-and-suspenders against any flakiness in Claude Code 2.1.x auto-discovery of `hooks/hooks.json` — `plugin.json` now has `"hooks": "./hooks/hooks.json"`.
+- **README version badge** unstuck from 0.2.1 → 0.5.1. (The 0.5.0 release fixed this too as a smoke-test for `/plan-tango:update`; 0.5.1 supersedes it with the actual visibility fix.)
+
 ## [0.5.0] — 2026-05-15
 
 ### Changed
-- **README version badge** unstuck from 0.2.1 → reflects current release. Wasn't bumped during 0.3.0/0.3.1/0.4.0 releases; tracker now part of the version-bump checklist.
+- **README version badge** unstuck from 0.2.1 → 0.5.0. Wasn't bumped during 0.3.0/0.3.1/0.4.0 releases; tracker now part of the version-bump checklist.
 
 ### Notes
-- This release exists primarily as an end-to-end smoke test of the `/plan-tango:update` self-update flow introduced in 0.4.0: bumps versions in `plugin.json` + `marketplace.json` + README badges, pushes a `v0.5.0` tag, and verifies that `/plan-tango:update` running from a 0.4.0 install successfully resets the marketplace clone to the new tag.
-- No functional code or behavior changes.
+- This release was primarily an end-to-end smoke test of the `/plan-tango:update` self-update flow introduced in 0.4.0: bumped versions + README badges + pushed the `v0.5.0` tag and verified that `/plan-tango:update` running from a 0.4.0 install resets the marketplace clone to the new tag. No functional code or behavior changes. **Superseded by 0.5.1** — see the 0.5.1 entry for the actual visibility fix.
 
 ## [0.4.0] — 2026-05-15
 
@@ -89,6 +97,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.5.1]: https://github.com/egsok/plan-tango/releases/tag/v0.5.1
 [0.5.0]: https://github.com/egsok/plan-tango/releases/tag/v0.5.0
 [0.4.0]: https://github.com/egsok/plan-tango/releases/tag/v0.4.0
 [0.3.1]: https://github.com/egsok/plan-tango/releases/tag/v0.3.1

@@ -71,7 +71,22 @@ try {
   try { parsed = JSON.parse(result.stdout); } catch { silent(); }
 
   if (parsed && parsed.status === "newer-available" && typeof parsed.message === "string") {
-    process.stdout.write(parsed.message + "\n");
+    // Emit JSON, not plain text. Plain stdout goes to Claude's invisible
+    // system-reminder context — the user never sees it in the chat.
+    //   - systemMessage: per Claude Code docs, "warning message shown to the
+    //     user (available on all hooks)" — primary user-visible channel.
+    //   - hookSpecificOutput.additionalContext: fallback. Even if
+    //     systemMessage doesn't render visibly in the current Claude Code
+    //     client, Claude reads this context and the explicit instruction
+    //     surfaces the notice in its first response.
+    const output = {
+      systemMessage: parsed.message,
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: `[plan-tango update notice — surface to user] ${parsed.message} If you respond to the user, briefly acknowledge this update is available.`
+      }
+    };
+    process.stdout.write(JSON.stringify(output) + "\n");
   }
 } catch {
   // Defensive: any unexpected error path → silent. The session must start
