@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.5.3-green" alt="Version 0.5.3">
+  <img src="https://img.shields.io/badge/version-0.5.4-green" alt="Version 0.5.4">
   <a href="README.md"><img src="https://img.shields.io/badge/lang-en-red" alt="Read in English"></a>
 </p>
 
@@ -82,7 +82,13 @@ codex login
 
 ## Обратная связь
 
-Баги и предложения — [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues). Про AI-инструменты и Claude Code пишу в Telegram-канал [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
+Баги и предложения — [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues).
+
+Telegram-канал, где пишу про AI-инструменты и Claude Code workflows: [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
+
+## Автор
+
+Сделал [Егор Соколов](https://egorsokolov.ru/) — 10 лет в продукте (Сбер, Рольф, Клаустрофобия). Пишу и экспериментирую с AI — в основном Claude Code, Codex и как выжать максимум из dev-воркфлоу. Разбор plan-tango (зачем и что вынес из работы над ним) — [egorsokolov.ru/ai/plan-tango/](https://egorsokolov.ru/ai/plan-tango/).
 
 ## Лицензия
 

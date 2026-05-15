@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.5.3-green" alt="Version 0.5.3">
+  <img src="https://img.shields.io/badge/version-0.5.4-green" alt="Version 0.5.4">
   <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-ru-red" alt="Read in Russian"></a>
 </p>
 
@@ -82,7 +82,13 @@ Independent of both, plan-tango watches the GitHub release channel: at session s
 
 ## Feedback
 
-Issues and PRs: [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues). I post about AI tooling and Claude Code in the Telegram channel [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
+Issues and PRs: [github.com/egsok/plan-tango/issues](https://github.com/egsok/plan-tango/issues).
+
+Telegram channel where I post about AI tooling and Claude Code workflows: [@neiroset_ne_vinovata](https://t.me/neiroset_ne_vinovata).
+
+## Author
+
+Built by [Egor Sokolov](https://egorsokolov.ru/) — 10 years in product (Sberbank, Rolf, Claustrophobia). Writing and experimenting with AI — mostly Claude Code, Codex, and squeezing more out of dev workflows. Deep-dive on plan-tango (the why and what I learned): [egorsokolov.ru/ai/plan-tango/](https://egorsokolov.ru/ai/plan-tango/).
 
 ## License
 

@@ -3,6 +3,12 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-05-15
+
+### Docs
+- **Feedback + Author section in root READMEs.** Telegram channel link split onto its own line. New "Author" section with a short bio (10 years in product at Sberbank, Rolf, Claustrophobia; writing and experimenting with AI), a branded link to the homepage, and a contextual link to the plan-tango deep-dive at [egorsokolov.ru/ai/plan-tango/](https://egorsokolov.ru/ai/plan-tango/).
+- **README version badges** bumped to 0.5.4.
+
 ## [0.5.3] — 2026-05-15
 
 ### Changed
@@ -107,6 +113,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.5.4]: https://github.com/egsok/plan-tango/releases/tag/v0.5.4
 [0.5.3]: https://github.com/egsok/plan-tango/releases/tag/v0.5.3
 [0.5.2]: https://github.com/egsok/plan-tango/releases/tag/v0.5.2
 [0.5.1]: https://github.com/egsok/plan-tango/releases/tag/v0.5.1
