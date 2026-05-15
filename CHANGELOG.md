@@ -3,6 +3,18 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-15
+
+### Added
+- **`/plan-tango:update` skill** — self-update by pulling the latest release tag into the marketplace clone (`~/.claude/plugins/marketplaces/plan-tango/`). Parallels the `/gsd-update` UX: version-check, confirm, `git fetch + git reset --hard v<latest>`, reload reminder. Replaces the manual "/plugin → Marketplaces → plan-tango → Update" navigation for the common case. Flags: `--check` (print status only, no update), `--force` (skip clean-working-tree safety check).
+
+### Fixed
+- **Update-notice message** — the end-of-Phase-E check and the SessionStart hook used to suggest `run /plugin update plan-tango@plan-tango`, but Claude Code 2.x has no such slash command (already noted in the 0.2.1 changelog when the form was removed from README). Now suggests `/plan-tango:update`.
+
+### Changed
+- **Settings wizard — 7 questions instead of 8.** `lenient` moved out of the interactive flow into preserved-as-is. Rationale: with the default `severity_aware: true`, the loop already stops on polish-only verdicts (zero critical+major findings), and `lenient` then only changes the status label (`converged-with-polish` ↔ `converged-lenient`) without changing termination. The previous wizard description ("Loop until clean ALLOW") was misleading because it ignored severity_aware's effect. To toggle `lenient`, hand-edit `~/.claude/plan-tango/config.json` or use `--lenient` per run.
+- **`severity_aware` wizard description rephrased** for clarity — explicitly states "no extra round on minor/nit-only BLOCK" to make the polish-skip semantics obvious.
+
 ## [0.3.1] — 2026-05-15
 
 ### Added
@@ -68,6 +80,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.4.0]: https://github.com/egsok/plan-tango/releases/tag/v0.4.0
 [0.3.1]: https://github.com/egsok/plan-tango/releases/tag/v0.3.1
 [0.3.0]: https://github.com/egsok/plan-tango/releases/tag/v0.3.0
 [0.2.1]: https://github.com/egsok/plan-tango/releases/tag/v0.2.1

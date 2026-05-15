@@ -234,7 +234,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     ```
 
     Parse the JSON response. The script always exits 0 and always emits JSON:
-    - `status === "newer-available"` → print exactly one line to user: `\n<response.message>` (already formatted with the `/plugin update plan-tango@plan-tango` hint).
+    - `status === "newer-available"` → print exactly one line to user: `\n<response.message>` (already formatted with the `/plan-tango:update` hint).
     - `status ∈ {ok, skipped, error}` → print nothing. Silent.
 
     The script is fail-silent on its own (network timeout, missing git, invalid cache) — orchestrator does NOT branch on stderr or exit codes. If the Bash call itself crashes (unlikely but possible), swallow the error and continue to step 30. Update-check is never blocking.

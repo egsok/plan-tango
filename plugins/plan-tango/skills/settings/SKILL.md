@@ -53,7 +53,7 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 
 # Step 2 — Walk through settings via AskUserQuestion
 
-**Question batches** (AskUserQuestion limit: max 4 per call, max 4 options per question). 2 batches total — 8 settings asked interactively, the rest preserved from existing config or defaults (see "Preserved as-is" section below):
+**Question batches** (AskUserQuestion limit: max 4 per call, max 4 options per question). 2 batches total — 7 settings asked interactively, the rest preserved from existing config or defaults (see "Preserved as-is" section below):
 
 **Batch 1 (4 questions):**
 1. `effort` — current value as first option (Recommended). Curated options (4 + AskUserQuestion's built-in **Other**): `high`, `medium`, `low`, `xhigh`. **Other** path covers schema-valid `none`/`minimal` (free-text input; validated via `load-config.mjs` step 6 — invalid → re-ask).
@@ -61,25 +61,25 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 3. `service_tier` — options: `Standard (default)` (description: `Normal Codex queue. No extra cost.`), `Fast (priority tier, ~1.5× speed)` (description: `Codex priority processing. Costs more. Same as --fast flag. Requires features.fast_mode=true in ~/.codex/config.toml (default in current Codex CLI).`), `Flex` (description: `OpenAI flex tier (queued, may be slower).`).
 4. `thread_mode` — options: `continue`, `fresh`.
 
-**Batch 2 (4 questions):**
+**Batch 2 (3 questions):**
 5. `final_check` — options: `never`, `always`. (Deprecated `auto` and `force` are accepted by the loader but auto-migrated with a warning — wizard never writes them.)
-6. `lenient` — options: `false (strict)`, `true (stop at no critical/major)`.
-7. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
-8. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only verdicts (default behavior)`. Label `false`, description `Strict: always run corrective iter on any BLOCK`.
+6. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
+7. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only BLOCK (minor/nit-only — no extra round). Default; usually what you want.`. Label `false`, description `Legacy: always run a corrective iter on any BLOCK, even minor-only.`.
 
-**Preserved as-is — no wizard question.** These advanced/set-and-forget settings are taken from `merged` (existing user config or built-in defaults) without an interactive prompt. They were previously a third "advanced" batch, but most users left defaults, and asking 3 more questions right before the confirm step added cognitive load with little payoff.
+**Preserved as-is — no wizard question.** These advanced/set-and-forget settings are taken from `merged` (existing user config or built-in defaults) without an interactive prompt. They were previously asked in the wizard, but most users left defaults, and the cognitive load right before the confirm step wasn't worth it.
 
 - `model` — preserved (default `null`, meaning Codex picks from `~/.codex/config.toml`). To pin a model, hand-edit `~/.claude/plan-tango/config.json` or pass `--model <m>` per run.
 - `codex_profile` — preserved (default `null`). To use a named profile from `~/.codex/config.toml`, hand-edit config or pass `--codex-profile <name>` per run.
 - `verbose_report` — preserved (default `false`). To get the full §3+§5 Phase E report, hand-edit config or pass `--verbose-report` per run.
+- `lenient` — preserved (default `false`). Only changes behavior when `severity_aware: false` (advanced/legacy mode). With the default `severity_aware: true`, the loop already stops on polish-only BLOCK; `lenient` then merely toggles the final status label (`converged-with-polish` ↔ `converged-lenient`) without changing termination. To toggle, hand-edit `~/.claude/plan-tango/config.json` or use `--lenient` per run.
 - `extra_codex_config` — preserved (default `[]`). Hand-edit to add `-c key=value` overrides plan-tango doesn't surface natively.
-- `update_check` — preserved (default `true`). Config-only opt-out for end-of-Phase-E version check AND the SessionStart hook update notice (`hooks/check-update.mjs` reads the same field). If the user has opted out via hand-edit (`"update_check": false`), the wizard MUST NOT silently re-enable it — see Step 3 `newConfig` template.
+- `update_check` — preserved (default `true`). Config-only opt-out for end-of-Phase-E version check, the SessionStart hook update notice (`hooks/check-update.mjs`), AND the `/plan-tango:update` skill's first read all consult this field. Running `/plan-tango:update` manually is an explicit user intent — the skill honours it even when `update_check: false` (the opt-out only silences the automatic notices). If the user has opted out via hand-edit, the wizard MUST NOT silently re-enable it — see Step 3 `newConfig` template.
 
 **After Batch 2, print** (one block, before Step 4 diff):
 ```
-Advanced settings (model, codex_profile, verbose_report, extra_codex_config) preserved as-is.
+Advanced settings (model, codex_profile, verbose_report, lenient, extra_codex_config) preserved as-is.
 To edit them, hand-edit ~/.claude/plan-tango/config.json after this wizard finishes,
-or use --model / --codex-profile / --verbose-report CLI flags per run.
+or use --model / --codex-profile / --verbose-report / --lenient CLI flags per run.
 ```
 
 **Per-question UX:**
@@ -110,15 +110,15 @@ const newConfig = {
   max_iter: <answer>,                // integer 1..12
   thread_mode: <answer>,             // "continue" | "fresh"
   final_check: <answer>,             // "never" | "always" (wizard never writes deprecated "auto" / "force")
-  lenient: <answer>,                 // boolean
   service_tier: <answer>,            // null | "fast" | "flex"
+  lenient: <preserved>,              // from current merged.lenient (default false) — advanced, no wizard question (only meaningful when severity_aware=false; with default severity_aware=true it only toggles the status label)
   quiet: <answer>,                   // boolean
   severity_aware: <answer>,          // boolean — config-only knob, no CLI flag (see plan-tango README)
   model: <preserved>,                // from current merged.model (default null) — advanced, no wizard question
   codex_profile: <preserved>,        // from current merged.codex_profile (default null) — advanced, no wizard question
   verbose_report: <preserved>,       // from current merged.verbose_report (default false) — advanced, no wizard question; --verbose-report CLI flag overrides per run
   extra_codex_config: <preserved>,   // from current merged.extra_codex_config (default [])
-  update_check: <preserved>          // from current merged.update_check (default true) — config-only opt-out for end-of-Phase-E version check AND SessionStart update-notice hook; MUST be preserved across wizard runs or hand-edited "false" would be silently lost
+  update_check: <preserved>          // from current merged.update_check (default true) — config-only opt-out for end-of-Phase-E version check AND SessionStart update-notice hook. /plan-tango:update is an explicit user intent and runs regardless of this field. MUST be preserved across wizard runs or hand-edited "false" would be silently lost
 };
 ```
 

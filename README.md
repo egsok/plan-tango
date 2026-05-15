@@ -74,11 +74,11 @@ Plus the smaller stuff: per-plan lock file (two parallel runs on the same plan c
 
 ## Update
 
-Open `/plugin` in Claude Code, go to **Marketplaces → plan-tango**, and pick **Update**. Claude Code pulls the marketplace and reinstalls if a newer `version` is published.
+Easiest path: run **`/plan-tango:update`**. The skill version-checks against GitHub, asks you to confirm, runs `git fetch + git reset --hard v<latest>` in the marketplace clone, and prints a reload reminder. Pass `--check` to print the status without updating, or `--force` to discard any local modifications in the marketplace clone.
 
-Auto-update is opt-in per marketplace: same menu, **Enable auto-update**. Third-party marketplaces have auto-update off by default — that's Claude Code policy, not a plan-tango choice.
+Manual path (always works): open `/plugin` in Claude Code, go to **Marketplaces → plan-tango**, and pick **Update**. Claude Code pulls the marketplace and reinstalls if a newer `version` is published. Auto-update is opt-in via the same menu: **Enable auto-update**. Third-party marketplaces have auto-update off by default — that's Claude Code policy, not a plan-tango choice.
 
-Independent of that, plan-tango itself checks GitHub releases at the end of each run (at most once per 7 days, fails silently on network issues) and prints a one-line notice if a newer tag is out. Opt out via `update_check: false` in `~/.claude/plan-tango/config.json`.
+Independent of both, plan-tango watches the GitHub release channel: at session start (a `SessionStart` hook) and at the end of each run, it checks for a newer tag — at most once per 7 days, silently on network errors — and prints a one-line notice if one is out. Opt out via `update_check: false` in `~/.claude/plan-tango/config.json`. (The opt-out silences the notices but does NOT block `/plan-tango:update` — running the skill explicitly is always honored.)
 
 ## Feedback
 
