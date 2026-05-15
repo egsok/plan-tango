@@ -1,6 +1,6 @@
 ---
 name: config
-description: "Interactive wizard to create or edit ~/.claude/plan-tango/config.json — persistent defaults for /plan-tango:plan-tango. Reads existing values if present, walks the user through each setting via AskUserQuestion, validates via load-config.mjs, writes atomically. Use when user wants to set or update plan-tango defaults without hand-editing JSON."
+description: "Interactive wizard to create or edit ~/.claude/plan-tango/config.json — persistent defaults for /plan-tango. Reads existing values if present, walks the user through each setting via AskUserQuestion, validates via load-config.mjs, writes atomically. Use when user wants to set or update plan-tango defaults without hand-editing JSON."
 allowed-tools:
   - Read
   - Write
@@ -175,7 +175,7 @@ Print (substitute `<backup-line>` per wrapper response — present only if `back
 ✓ Wrote ~/.claude/plan-tango/config.json
 <backup-line>
 Verify: node "$(claude plugin path plan-tango)/skills/plan-tango/scripts/load-config.mjs" --merge --cli '{}'
-Run plan-tango: /plan-tango:plan-tango
+Run plan-tango: /plan-tango
 ```
 
 `<backup-line>` template (omit entirely if wrapper returned `backup_path: null`):
