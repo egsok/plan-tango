@@ -48,7 +48,7 @@ Wait for the marketplace to be added, then:
 
 Or just ask the agent: "install plan-tango from github.com/egsok/plan-tango". Claude will figure out the commands and walk you through.
 
-**3. Reload plugins** — run `/reload-plugins` in the same chat to pick up the new skill, scripts, and agent without leaving the session. (A full Claude Code restart works too, if you prefer.)
+**3. Reload plugins** — in the **terminal** Claude Code, run `/reload-plugins` to pick up the new skill, scripts, and agent without leaving the session. In the **VS Code extension** that slash command isn't available — use **Developer: Reload Window** from the Command Palette (or restart Claude Code) instead.
 
 ## Usage
 

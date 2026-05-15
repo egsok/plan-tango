@@ -3,6 +3,17 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-05-15
+
+### Added
+- **SessionStart hook for in-session update notice.** `hooks/check-update.mjs` runs at every new session and every resume, reusing the existing `update-check.mjs` cache (7-day TTL, silent-on-failure) — when a newer GitHub release tag exists, Claude Code surfaces a one-line "update available" hint as session context. Respects the same `update_check: false` opt-out as the Phase E check. Cache hits are sub-50ms; cache misses are bounded by a 3 s network timeout under the 5 s hook budget, so a slow network never blocks session startup.
+
+### Changed
+- **Settings wizard simplified — 8 questions instead of 11.** `model`, `codex_profile`, and `verbose_report` are no longer asked in the wizard; existing values are preserved from `~/.claude/plan-tango/config.json` (or defaults on fresh installs). These were "advanced" settings most users left at defaults, and asking them right before the confirm step added cognitive load. To change them, hand-edit the config file or use the corresponding CLI flag (`--model`, `--codex-profile`, `--verbose-report`).
+
+### Docs
+- **`/reload-plugins` install step clarified** — the slash command is available only in the terminal Claude Code. VS Code extension users need to run **Developer: Reload Window** from the Command Palette (or restart Claude Code) instead.
+
 ## [0.3.0] — 2026-05-15
 
 ### Breaking changes
@@ -57,6 +68,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.3.1]: https://github.com/egsok/plan-tango/releases/tag/v0.3.1
 [0.3.0]: https://github.com/egsok/plan-tango/releases/tag/v0.3.0
 [0.2.1]: https://github.com/egsok/plan-tango/releases/tag/v0.2.1
 [0.2.0]: https://github.com/egsok/plan-tango/releases/tag/v0.2.0

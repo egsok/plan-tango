@@ -1,6 +1,6 @@
 {
   "name": "plan-tango",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Auto-converge a Claude-written plan via Codex (gpt-5) review iterations until clean ALLOW or max-iter.",
   "author": { "name": "Egor Sokolov" }
 }

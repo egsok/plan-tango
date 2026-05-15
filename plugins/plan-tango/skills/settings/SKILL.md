@@ -53,7 +53,7 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 
 # Step 2 — Walk through settings via AskUserQuestion
 
-**Question batches** (AskUserQuestion limit: max 4 per call, max 4 options per question). 3 batches total:
+**Question batches** (AskUserQuestion limit: max 4 per call, max 4 options per question). 2 batches total — 8 settings asked interactively, the rest preserved from existing config or defaults (see "Preserved as-is" section below):
 
 **Batch 1 (4 questions):**
 1. `effort` — current value as first option (Recommended). Curated options (4 + AskUserQuestion's built-in **Other**): `high`, `medium`, `low`, `xhigh`. **Other** path covers schema-valid `none`/`minimal` (free-text input; validated via `load-config.mjs` step 6 — invalid → re-ask).
@@ -67,14 +67,20 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 7. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
 8. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only verdicts (default behavior)`. Label `false`, description `Strict: always run corrective iter on any BLOCK`.
 
-**Batch 3 (3 questions, advanced):**
-9. `model` — options (3 + Other): `null (Codex picks)`, `gpt-5`, `gpt-5.5`. **Other** = free-text model name.
-10. `codex_profile` — options (1 + Other): `null (none)`. **Other** = profile name (any non-empty string).
-11. `verbose_report` — options (binary, labels ≤25 chars): label `false (terse)`, description `Default — render §1+§2+§4 (and §6 polish-only) only`. Label `true (full report)`, description `Also render §3 convergence table and §5 narrative`.
+**Preserved as-is — no wizard question.** These advanced/set-and-forget settings are taken from `merged` (existing user config or built-in defaults) without an interactive prompt. They were previously a third "advanced" batch, but most users left defaults, and asking 3 more questions right before the confirm step added cognitive load with little payoff.
 
-**`extra_codex_config`** — preserved as-is from current `merged.extra_codex_config` (default `[]`). Print after batch 3: "extra_codex_config preserved as-is. To edit, hand-edit `~/.claude/plan-tango/config.json` after wizard finishes."
+- `model` — preserved (default `null`, meaning Codex picks from `~/.codex/config.toml`). To pin a model, hand-edit `~/.claude/plan-tango/config.json` or pass `--model <m>` per run.
+- `codex_profile` — preserved (default `null`). To use a named profile from `~/.codex/config.toml`, hand-edit config or pass `--codex-profile <name>` per run.
+- `verbose_report` — preserved (default `false`). To get the full §3+§5 Phase E report, hand-edit config or pass `--verbose-report` per run.
+- `extra_codex_config` — preserved (default `[]`). Hand-edit to add `-c key=value` overrides plan-tango doesn't surface natively.
+- `update_check` — preserved (default `true`). Config-only opt-out for end-of-Phase-E version check AND the SessionStart hook update notice (`hooks/check-update.mjs` reads the same field). If the user has opted out via hand-edit (`"update_check": false`), the wizard MUST NOT silently re-enable it — see Step 3 `newConfig` template.
 
-**`update_check`** — preserved as-is from current `merged.update_check` (default `true`). No UI question (set-and-forget; mirrors `extra_codex_config` preservation pattern). If the user has opted out via hand-edit (`"update_check": false`), the wizard MUST NOT silently re-enable it — see Step 3 `newConfig` template.
+**After Batch 2, print** (one block, before Step 4 diff):
+```
+Advanced settings (model, codex_profile, verbose_report, extra_codex_config) preserved as-is.
+To edit them, hand-edit ~/.claude/plan-tango/config.json after this wizard finishes,
+or use --model / --codex-profile / --verbose-report CLI flags per run.
+```
 
 **Per-question UX:**
 - **Recommended option = current value**.
@@ -96,7 +102,6 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 - Free-text from AskUserQuestion's **Other** field → used verbatim as the scalar value.
 - For `max_iter`: parse Other as integer; reject non-integer or out-of-range `1..12` → re-ask.
 - For `effort`: validate Other against schema enum (`none|minimal|low|medium|high|xhigh`); reject otherwise → re-ask.
-- For `model` / `codex_profile`: free-text Other accepted as any non-empty string; empty → re-ask.
 
 After mapping every answer to its scalar value:
 ```js
@@ -109,15 +114,15 @@ const newConfig = {
   service_tier: <answer>,            // null | "fast" | "flex"
   quiet: <answer>,                   // boolean
   severity_aware: <answer>,          // boolean — config-only knob, no CLI flag (see plan-tango README)
-  verbose_report: <answer>,          // boolean — config-only knob (also surfaced as --verbose-report CLI flag)
-  model: <answer>,                   // null | non-empty string
-  codex_profile: <answer>,           // null | non-empty string
+  model: <preserved>,                // from current merged.model (default null) — advanced, no wizard question
+  codex_profile: <preserved>,        // from current merged.codex_profile (default null) — advanced, no wizard question
+  verbose_report: <preserved>,       // from current merged.verbose_report (default false) — advanced, no wizard question; --verbose-report CLI flag overrides per run
   extra_codex_config: <preserved>,   // from current merged.extra_codex_config (default [])
-  update_check: <preserved>          // from current merged.update_check (default true) — config-only opt-out for end-of-Phase-E version check; MUST be preserved across wizard runs or hand-edited "false" would be silently lost
+  update_check: <preserved>          // from current merged.update_check (default true) — config-only opt-out for end-of-Phase-E version check AND SessionStart update-notice hook; MUST be preserved across wizard runs or hand-edited "false" would be silently lost
 };
 ```
 
-**Hard invariant**: sentinel option labels (e.g. `custom`, `enter-name`, `null (Codex picks)`) MUST NOT appear as values in `newConfig`. The label is for human display; mapping rules above translate to actual config values. A run that would emit `model: "custom"` is a wizard bug — abort before invoking write-config.
+**Hard invariant**: sentinel option labels (e.g. `Standard (default)`, parenthesised description fragments) MUST NOT appear as values in `newConfig`. The label is for human display; mapping rules above translate to actual config values. A run that would emit `service_tier: "Standard (default)"` is a wizard bug — abort before invoking write-config.
 
 # Step 4 — Show diff (if config_exists)
 
