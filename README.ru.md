@@ -53,13 +53,13 @@ codex login
 ## Использование
 
 ```
-/plan-tango                      # активный план из plan mode
-/plan-tango <slug-or-path>       # или явный путь к файлу
-/plan-tango --fast               # приоритетный режим Codex (~1.5× быстрее)
-/plan-tango --max-iter 10 --effort medium --lenient --quiet --fresh-each
+/plan-tango:run                          # активный план из plan mode
+/plan-tango:run <slug-or-path>           # или явный путь к файлу
+/plan-tango:run --fast                   # приоритетный режим Codex (~1.5× быстрее)
+/plan-tango:run --max-iter 10 --effort medium --lenient --quiet --fresh-each
 ```
 
-Постоянные настройки лежат в `~/.claude/plan-tango/config.json`. Если не хочется редактировать JSON руками — интерактивная настройка: `/plan-tango:config`.
+Постоянные настройки лежат в `~/.claude/plan-tango/config.json`. Если не хочется редактировать JSON руками — интерактивная настройка: `/plan-tango:settings`.
 
 Полная документация по флагам, статусам и архитектуре — [plugins/plan-tango/README.md](plugins/plan-tango/README.md) (English) · [plugins/plan-tango/README.ru.md](plugins/plan-tango/README.ru.md) (Russian).
 

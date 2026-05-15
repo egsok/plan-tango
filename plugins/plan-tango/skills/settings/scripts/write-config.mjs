@@ -87,8 +87,8 @@ function main() {
 
   // Step 4: independent validation via --config <temp>
   const here = path.dirname(fileURLToPath(import.meta.url));
-  // here = .../skills/config/scripts ; sibling = .../skills/plan-tango/scripts/load-config.mjs
-  const loadConfigPath = path.resolve(here, "..", "..", "plan-tango", "scripts", "load-config.mjs");
+  // here = .../skills/settings/scripts ; sibling = .../skills/run/scripts/load-config.mjs
+  const loadConfigPath = path.resolve(here, "..", "..", "run", "scripts", "load-config.mjs");
 
   const validation = spawnSync(
     process.execPath,

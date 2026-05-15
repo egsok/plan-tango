@@ -17,23 +17,18 @@ Works **inside plan mode** — no need to exit and re-enter.
 
 ## Basic usage
 
-Two equivalent invocation forms — **`/plan-tango`** and **`/plan-tango:plan-tango`**:
-
-```
-/plan-tango                      # short form (namespace auto-routing)
-/plan-tango:plan-tango           # explicit <plugin-name>:<skill-name>
-```
-
-Both resolve to the same skill. Claude Code auto-routes the short form to skill `plan-tango` inside plugin `plan-tango` because the plugin name matches the skill name and no other installed plugin claims it.
+Invoked as **`/plan-tango:run`** (or pick from the slash-command dropdown when you type `/plan-tango`).
 
 Without arguments: uses the active plan from the system prompt, otherwise the newest by mtime under `~/.claude/plans/`.
 
 With an explicit plan:
 ```
-/plan-tango <slug-or-path>
-/plan-tango sample-plan
-/plan-tango ~/.claude/plans/foo.md
+/plan-tango:run <slug-or-path>
+/plan-tango:run sample-plan
+/plan-tango:run ~/.claude/plans/foo.md
 ```
+
+Persistent defaults wizard: **`/plan-tango:settings`**.
 
 ## All options
 
@@ -61,13 +56,13 @@ If you don't want to type `--effort medium --max-iter 8` every run, drop default
 
 ```bash
 mkdir ~/.claude/plan-tango
-cp "$(claude plugin path plan-tango)/skills/plan-tango/user-config.example.json" ~/.claude/plan-tango/config.json
+cp "$(claude plugin path plan-tango)/skills/run/user-config.example.json" ~/.claude/plan-tango/config.json
 # If `claude plugin path` is unavailable, the typical path is:
-# ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/plan-tango/user-config.example.json
+# ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/run/user-config.example.json
 # then edit
 ```
 
-Or run the interactive wizard: `/plan-tango:config`.
+Or run the interactive wizard: `/plan-tango:settings`.
 
 Fields (all optional — anything absent → built-in default):
 
@@ -89,7 +84,7 @@ Fields (all optional — anything absent → built-in default):
 }
 ```
 
-> `severity_aware` and `update_check` are **config-only** — no CLI flags (by design — see "Severity-aware convergence" below for the rationale on severity_aware). To toggle them, edit `config.json` or run `/plan-tango:config`.
+> `severity_aware` and `update_check` are **config-only** — no CLI flags (by design — see "Severity-aware convergence" below for the rationale on severity_aware). To toggle them, edit `config.json` or run `/plan-tango:settings`.
 
 **Precedence (highest wins):**
 ```
@@ -100,7 +95,7 @@ Load-time validation: `effort` enum, `max_iter ≤ 12`, `thread_mode ∈ {fresh,
 
 `extra_codex_config: ["key=val", ...]` — array of raw `-c key=value` strings to pass through to Codex (for flags plan-tango doesn't surface natively). Applied AFTER profile but BEFORE canonical (effort / service_tier / model win on conflict).
 
-> When running `/plan-tango:config`, the wizard preserves the existing `extra_codex_config` and `update_check` values without prompting (no UI for editing the raw `-c` array via `AskUserQuestion`; `update_check` is set-and-forget). To add/remove `-c key=value` strings or flip `update_check`, edit `~/.claude/plan-tango/config.json` directly.
+> When running `/plan-tango:settings`, the wizard preserves the existing `extra_codex_config` and `update_check` values without prompting (no UI for editing the raw `-c` array via `AskUserQuestion`; `update_check` is set-and-forget). To add/remove `-c key=value` strings or flip `update_check`, edit `~/.claude/plan-tango/config.json` directly.
 
 ## Thread mode
 
@@ -138,7 +133,7 @@ Enabled by default. Changes the loop's reaction to BLOCK verdicts based on sever
 
 **`--lenient` does NOT skip Opus final-check** — `converged-lenient` is still eligible for the Phase D pre-gate. If you want to skip Opus, use `--no-final-check` (or `final_check: "never"` in config).
 
-**Opt-out**: config-only. Set `"severity_aware": false` in `~/.claude/plan-tango/config.json` or run `/plan-tango:config`. There is no CLI flag on purpose (`--lenient` already occupies the explicit per-run polish-stop niche; two flags with overlapping semantics would confuse users).
+**Opt-out**: config-only. Set `"severity_aware": false` in `~/.claude/plan-tango/config.json` or run `/plan-tango:settings`. There is no CLI flag on purpose (`--lenient` already occupies the explicit per-run polish-stop niche; two flags with overlapping semantics would confuse users).
 
 ## Quiet mode (`--quiet`)
 
@@ -155,14 +150,14 @@ By default the skill prints 1–2 lines per iteration (snapshot, sending-to-Code
 
 **What this flag does NOT control**: Bash IN/OUT panels are rendered by Claude Code itself (including when calls are allowlisted). To hide those panels too, configure the allowlist via `/fewer-permission-prompts`.
 
-CLI: `/plan-tango <slug> --quiet`. Persistent: add `"quiet": true` to `~/.claude/plan-tango/config.json` (or run `/plan-tango:config`).
+CLI: `/plan-tango:run <slug> --quiet`. Persistent: add `"quiet": true` to `~/.claude/plan-tango/config.json` (or run `/plan-tango:settings`).
 
 ## Fast mode (priority service tier)
 
 Codex supports a priority processing tier — ~1.5× speed at a higher per-token cost. Enable via `--fast` or `--service-tier fast`:
 
 ```
-/plan-tango <slug> --fast
+/plan-tango:run <slug> --fast
 ```
 
 Under the hood: `-c service_tier="fast"` in the `codex exec` argv. This maps to `service_tier: "priority"` for the OpenAI Responses API.
@@ -183,7 +178,7 @@ Under the hood: `-c service_tier="fast"` in the `codex exec` argv. This maps to 
 service_tier = "fast"
 model_reasoning_effort = "high"
 ```
-Then: `/plan-tango <slug> --codex-profile review-fast`.
+Then: `/plan-tango:run <slug> --codex-profile review-fast`.
 
 ## How the loop runs
 
@@ -297,7 +292,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
 
 After the first run, invoke `/fewer-permission-prompts` — it adds an allowlist to `~/.claude/settings.json`, and subsequent runs go through without prompts.
 
-**Diagnostics**: if anything looks off (Codex CLI not found, plans dir not writable, lock stuck), run `node ${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/doctor.mjs` — it checks the Codex CLI, user-config parsing, write access to `~/.claude/plans/`, the lock acquire/release cycle, and `run-codex-review.mjs` error handling. All checks are read-only / dry-run; probe files are removed automatically. Add `--json` for machine-readable output.
+**Diagnostics**: if anything looks off (Codex CLI not found, plans dir not writable, lock stuck), run `node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/doctor.mjs` — it checks the Codex CLI, user-config parsing, write access to `~/.claude/plans/`, the lock acquire/release cycle, and `run-codex-review.mjs` error handling. All checks are read-only / dry-run; probe files are removed automatically. Add `--json` for machine-readable output.
 
 ### Plan mode + paths under `~/.claude/plans/` (important)
 
@@ -329,7 +324,7 @@ The skill writes state / ledger / snapshot / workspace files under `~/.claude/pl
 
 **A restart of the active Claude Code session is required after the patch** — the VS Code extension caches permissions at session start; `settings.json` changes aren't picked up live. Close the VS Code window (or re-open the workspace) → the new session loads the updated permissions.
 
-**Alternative** (if you don't want to edit global settings): run `/plan-tango` **outside** plan mode. Plan mode isn't required for the skill — the plan is already written, the rest is just the review loop. Normal mode with `defaultMode: "acceptEdits"` gives a silent flow without extra setup.
+**Alternative** (if you don't want to edit global settings): run `/plan-tango:run` **outside** plan mode. Plan mode isn't required for the skill — the plan is already written, the rest is just the review loop. Normal mode with `defaultMode: "acceptEdits"` gives a silent flow without extra setup.
 
 ## Interruption and resume
 
@@ -337,7 +332,7 @@ The skill writes state / ledger / snapshot / workspace files under `~/.claude/pl
 
 **Resume from where you left off**:
 ```
-/plan-tango <slug-or-path> --resume
+/plan-tango:run <slug-or-path> --resume
 ```
 
 The skill reads state, verifies the plan wasn't modified outside the skill (via `last_known_plan_hash`), and continues from the next iteration.
@@ -348,7 +343,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
 
 **"Lock held by another session"** — either another run is actually in progress, or a previous run crashed and the lock hasn't expired yet.
 
-- Check: `node "${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/lock.mjs" inspect --slug <slug>` (or the absolute path under `~/.claude/plugins/marketplaces/plan-tango/...`).
+- Check: `node "${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/lock.mjs" inspect --slug <slug>` (or the absolute path under `~/.claude/plugins/marketplaces/plan-tango/...`).
 - If no parallel run is in progress → wait up to 30 minutes (auto-stale) or pass `--takeover` after `inspect`.
 
 **"Plan modified outside skill since last completed iteration"** — someone (or you in the editor) changed the plan between iterations.
@@ -388,7 +383,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
     ├── agents/
     │   └── plan-final-checker.md             # opus, raw ALLOW/BLOCK → registered as plan-tango:plan-final-checker (Phase D only)
     └── skills/
-        ├── plan-tango/                       # main loop skill
+        ├── run/                              # main loop skill (/plan-tango:run)
         │   ├── SKILL.md                      # orchestrator instructions
         │   ├── user-config.example.json      # sample persistent defaults
         │   ├── scripts/
@@ -408,7 +403,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
         │   └── references/
         │       ├── review-prompt-template.md # XML prompt for Codex (with {{RESET_BLOCK}} for continue mode)
         │       └── verdict-contract.md       # verdict format with examples
-        └── config/                           # /plan-tango:config wizard
+        └── settings/                         # /plan-tango:settings wizard
             ├── SKILL.md                      # wizard orchestrator instructions
             └── scripts/
                 └── write-config.mjs          # atomic config writer + validator

@@ -53,13 +53,13 @@ Or just ask the agent: "install plan-tango from github.com/egsok/plan-tango". Cl
 ## Usage
 
 ```
-/plan-tango                      # use the active plan from plan mode
-/plan-tango <slug-or-path>       # or pass a specific plan file
-/plan-tango --fast               # priority service tier (~1.5× faster)
-/plan-tango --max-iter 10 --effort medium --lenient --quiet --fresh-each
+/plan-tango:run                          # use the active plan from plan mode
+/plan-tango:run <slug-or-path>           # or pass a specific plan file
+/plan-tango:run --fast                   # priority service tier (~1.5× faster)
+/plan-tango:run --max-iter 10 --effort medium --lenient --quiet --fresh-each
 ```
 
-Persistent defaults live in `~/.claude/plan-tango/config.json`. For an interactive wizard instead of hand-editing JSON: `/plan-tango:config`.
+Persistent defaults live in `~/.claude/plan-tango/config.json`. For an interactive wizard instead of hand-editing JSON: `/plan-tango:settings`.
 
 Full reference (flag list, status codes, architecture notes) — [plugins/plan-tango/README.md](plugins/plan-tango/README.md) (English) · [plugins/plan-tango/README.ru.md](plugins/plan-tango/README.ru.md) (Russian).
 

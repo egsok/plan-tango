@@ -58,7 +58,7 @@ Examples (illustrative, not for verbatim reuse):
 
 > Iter 1: BLOCK 1 critical + 4 major. Iter 2: BLOCK 0 critical + 2 major. Iter 3: BLOCK 0+0+1+1. Iter 4 (post-cap courtesy): BLOCK 0+0+2+0. Critical устранён за 1 итерацию. Major — за 3. Iter 4 принёс только minor — applied как courtesy.
 
-> Hit the hard cap with 3 valuable major findings still open — see ledger. Worth one more `/plan-tango <slug> --resume --max-iter 4` pass before handing off.
+> Hit the hard cap with 3 valuable major findings still open — see ledger. Worth one more `/plan-tango:run <slug> --resume --max-iter 4` pass before handing off.
 
 ## §6 — Polish recommendations (advisory, not applied)
 

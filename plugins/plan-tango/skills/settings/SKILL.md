@@ -1,6 +1,6 @@
 ---
-name: config
-description: "Interactive wizard to create or edit ~/.claude/plan-tango/config.json — persistent defaults for /plan-tango. Reads existing values if present, walks the user through each setting via AskUserQuestion, validates via load-config.mjs, writes atomically. Use when user wants to set or update plan-tango defaults without hand-editing JSON."
+name: settings
+description: "Interactive wizard to create or edit ~/.claude/plan-tango/config.json — persistent defaults for /plan-tango:run. Reads existing values if present, walks the user through each setting via AskUserQuestion, validates via load-config.mjs, writes atomically. Use when user wants to set or update plan-tango defaults without hand-editing JSON. Invoked as /plan-tango:settings."
 allowed-tools:
   - Read
   - Write
@@ -18,7 +18,7 @@ Edit `~/.claude/plan-tango/config.json` interactively. Cover all configurable ke
 
 Run via Bash (paths quoted for spaces):
 ```
-node "${CLAUDE_PLUGIN_ROOT}/skills/plan-tango/scripts/load-config.mjs" --merge --cli '{}'
+node "${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/load-config.mjs" --merge --cli '{}'
 ```
 
 **Three outcomes**, each handled explicitly:
@@ -151,7 +151,7 @@ Flow:
 
 2. **Skill — invoke wrapper** via Bash (paths double-quoted because plugin paths can contain spaces, e.g. `C:\Users\Alice Smith\...`):
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/skills/config/scripts/write-config.mjs" --file "<abs-path-to-tmp-file>"
+   node "${CLAUDE_PLUGIN_ROOT}/skills/settings/scripts/write-config.mjs" --file "<abs-path-to-tmp-file>"
    ```
 
 3. **`write-config.mjs --file <path>`** does:
@@ -175,8 +175,8 @@ Print (substitute `<backup-line>` per wrapper response — present only if `back
 ```
 ✓ Wrote ~/.claude/plan-tango/config.json
 <backup-line>
-Verify: node "$(claude plugin path plan-tango)/skills/plan-tango/scripts/load-config.mjs" --merge --cli '{}'
-Run plan-tango: /plan-tango
+Verify: node "$(claude plugin path plan-tango)/skills/run/scripts/load-config.mjs" --merge --cli '{}'
+Run plan-tango: /plan-tango:run
 ```
 
 `<backup-line>` template (omit entirely if wrapper returned `backup_path: null`):

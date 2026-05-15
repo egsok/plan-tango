@@ -3,6 +3,20 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-05-15
+
+### Breaking changes
+- **Renamed skill `plan-tango` → `run`.** The plugin's main command is now `/plan-tango:run` (was `/plan-tango:plan-tango`). The bare-form `/plan-tango` dropdown shortcut still surfaces the plugin's commands in Claude Code's slash-command picker, but the resolved command is now `plan-tango:run`.
+- **Renamed skill `config` → `settings`.** The config wizard is now invoked as `/plan-tango:settings` (was `/plan-tango:config`). Avoids the dropdown collision where Claude Code's built-in `/config` could be picked instead of the wizard.
+
+### Why
+Two confusing UX edges were in front of new users: `/plan-tango:plan-tango` stuttering tautology, and `/config` dropdown collision with the Claude Code built-in. Both are now gone — invocations are honest and unambiguous.
+
+### Migration
+- Existing `~/.claude/plan-tango/config.json` is unaffected — config path and schema unchanged. Just use the new command names.
+- `update-check.mjs` GitHub release-tag polling continues to work; the new 0.3.0 tag will be the next "newer available" notice for anyone still on 0.2.x.
+- Skill folders renamed via `git mv`, so file history is preserved.
+
 ## [0.2.1] — 2026-05-14
 
 ### Fixed
@@ -43,5 +57,6 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.3.0]: https://github.com/egsok/plan-tango/releases/tag/v0.3.0
 [0.2.1]: https://github.com/egsok/plan-tango/releases/tag/v0.2.1
 [0.2.0]: https://github.com/egsok/plan-tango/releases/tag/v0.2.0

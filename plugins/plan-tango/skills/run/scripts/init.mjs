@@ -211,7 +211,7 @@ function main() {
     if (args.resume) {
       failNoLock(
         "resume_no_plan",
-        "Cannot --resume without an explicit plan path/slug or active plan. Re-run /plan-tango <slug-or-path> --resume to be unambiguous."
+        "Cannot --resume without an explicit plan path/slug or active plan. Re-run /plan-tango:run <slug-or-path> --resume to be unambiguous."
       );
     }
     failNoLock(
@@ -246,7 +246,7 @@ function main() {
   if (codexRes.status !== 0) {
     failNoLock(
       "codex_cli_missing",
-      "Codex CLI not found on PATH. Install with `npm install -g @openai/codex`, then run `codex login` (or `/codex:setup`). Re-run /plan-tango once codex --version succeeds."
+      "Codex CLI not found on PATH. Install with `npm install -g @openai/codex`, then run `codex login` (or `/codex:setup`). Re-run /plan-tango:run once codex --version succeeds."
     );
   }
   const codexVersion = (codexRes.stdout || "").trim() || "unknown";
