@@ -3,6 +3,11 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-05-15
+
+### Changed
+- **📦 emoji prefix on the update-notice message.** The notice text emitted by `update-check.mjs` (and surfaced via both the SessionStart hook's `systemMessage` and the `additionalContext` fallback) now leads with 📦 to stand out a little more inside Claude Code's `L SessionStart:startup says:` framing. Behavior unchanged.
+
 ## [0.5.2] — 2026-05-15
 
 ### Changed
@@ -102,6 +107,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.5.3]: https://github.com/egsok/plan-tango/releases/tag/v0.5.3
 [0.5.2]: https://github.com/egsok/plan-tango/releases/tag/v0.5.2
 [0.5.1]: https://github.com/egsok/plan-tango/releases/tag/v0.5.1
 [0.5.0]: https://github.com/egsok/plan-tango/releases/tag/v0.5.0
