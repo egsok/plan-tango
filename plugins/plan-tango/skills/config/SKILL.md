@@ -58,12 +58,12 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 **Batch 1 (4 questions):**
 1. `effort` — current value as first option (Recommended). Curated options (4 + AskUserQuestion's built-in **Other**): `high`, `medium`, `low`, `xhigh`. **Other** path covers schema-valid `none`/`minimal` (free-text input; validated via `load-config.mjs` step 6 — invalid → re-ask).
 2. `max_iter` — options (4 + Other): `6`, `8`, `10`, `12`. **Other** for any integer 1..12.
-3. `thread_mode` — options: `continue`, `fresh`.
-4. `final_check` — options: `never`, `always`. (Deprecated `auto` and `force` are accepted by the loader but auto-migrated with a warning — wizard never writes them.)
+3. `service_tier` — options: `Standard (default)` (description: `Normal Codex queue. No extra cost.`), `Fast (priority tier, ~1.5× speed)` (description: `Codex priority processing. Costs more. Same as --fast flag. Requires features.fast_mode=true in ~/.codex/config.toml (default in current Codex CLI).`), `Flex` (description: `OpenAI flex tier (queued, may be slower).`).
+4. `thread_mode` — options: `continue`, `fresh`.
 
 **Batch 2 (4 questions):**
-5. `lenient` — options: `false (strict)`, `true (stop at no critical/major)`.
-6. `service_tier` — options: `null (standard)`, `fast (~1.5x speed, +$)`, `flex`.
+5. `final_check` — options: `never`, `always`. (Deprecated `auto` and `force` are accepted by the loader but auto-migrated with a warning — wizard never writes them.)
+6. `lenient` — options: `false (strict)`, `true (stop at no critical/major)`.
 7. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
 8. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only verdicts (default behavior)`. Label `false`, description `Strict: always run corrective iter on any BLOCK`.
 
@@ -89,6 +89,7 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 
 **Label → value mapping** (applied per question BEFORE assembling `newConfig`):
 - Sentinel labels prefixed with `null (...)` → JS `null`.
+- For `service_tier` specifically: label `Standard (default)` → JS `null`; label `Fast (priority tier, ~1.5× speed)` → `"fast"`; label `Flex` → `"flex"`. (Defensive: these labels don't share a prefix with the `null (...)` rule, so the mapping is spelled out.)
 - Numeric labels (`6`, `8`, ...) → integer (`parseInt`).
 - Boolean labels like `false (strict)` → `false`; `true (...)` → `true`.
 - Plain text labels (`high`, `gpt-5`, `continue`) → string verbatim (without parenthesised description).
