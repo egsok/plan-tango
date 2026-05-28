@@ -13,7 +13,7 @@
   "verbose_report": false,
   "update_check": true,
 
-  "_README": "Copy this file to ~/.claude/plan-tango/config.json and edit. CLI flags ALWAYS override these values. Validation runs on load — invalid values cause /plan-tango:run to abort with a clear error.",
+  "_README": "Copy this file to ~/.claude/plan-tango/config.json and edit. CLI flags ALWAYS override these values. Validation runs on load — invalid values cause /plan-tango:tango to abort with a clear error.",
   "_comment_model": "Codex model name (e.g. gpt-5.5, gpt-5.3-codex-spark). null = let Codex choose its own default from ~/.codex/config.toml.",
   "_comment_effort": "Reasoning effort: none | minimal | low | medium | high | xhigh. Lower = faster + cheaper. Default high.",
   "_comment_max_iter": "Default iteration cap (1..12). Hard cap is 12 — config can not exceed it. Continue-prompt may raise it up to 12 mid-run.",

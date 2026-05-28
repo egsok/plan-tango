@@ -3,6 +3,21 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-05-28
+
+### Breaking changes
+- **Renamed the main skill `run` → `tango`.** The plugin's primary command is now **`/plan-tango:tango`** (was `/plan-tango:run`). The old `/plan-tango:run` no longer resolves — update any scripts, notes, or muscle memory. The `skills/run/` directory moved to `skills/tango/`; all internal script paths, the SessionStart update hook (`hooks/check-update.mjs`), and the settings wizard's shared-script reference (`write-config.mjs` → `load-config.mjs`) were repointed to match. `/plan-tango:settings` and `/plan-tango:update` are unchanged.
+
+### Why
+The Claude Code **VS Code extension** was hiding `/plan-tango:run` from the slash-command autocomplete dropdown. The extension's picker deduplicates entries by leaf-name (the part after `:`), and `run` collided with Claude Code's built-in `run` skill ("Launch and drive this project's app") — so the built-in won and the plugin's entry was dropped. The command still ran if you typed it out in full, but it was invisible in the picker, which is how most VS Code users discover and launch it. (The terminal CLI was never affected — it resolves the fully-qualified name.) `tango` has no built-in collision, reads the same in English and Russian, and matches the plugin's Claude↔Codex "dance" — so the command shows up in the VS Code dropdown again.
+
+### Migration
+- Use **`/plan-tango:tango`** instead of `/plan-tango:run` — same positional arg and flags.
+- After updating, reload plugins (terminal: `/reload-plugins`; VS Code: **Developer: Reload Window**, or restart Claude Code).
+
+### Docs
+- **README version badges** bumped to 0.6.0.
+
 ## [0.5.4] — 2026-05-15
 
 ### Docs
@@ -113,6 +128,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.6.0]: https://github.com/egsok/plan-tango/releases/tag/v0.6.0
 [0.5.4]: https://github.com/egsok/plan-tango/releases/tag/v0.5.4
 [0.5.3]: https://github.com/egsok/plan-tango/releases/tag/v0.5.3
 [0.5.2]: https://github.com/egsok/plan-tango/releases/tag/v0.5.2

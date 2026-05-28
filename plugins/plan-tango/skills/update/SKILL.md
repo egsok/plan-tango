@@ -13,7 +13,7 @@ Self-update plan-tango from the GitHub release channel. Resolves the marketplace
 </objective>
 
 <execution_context>
-- **Update checker**: `${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/update-check.mjs` — handles the 7-day on-disk cache (`~/.claude/plan-tango/.update-cache.json`), `git ls-remote --tags` query, semver comparison, silent-on-network-failure behaviour. Reused as-is; this skill only adds the `git pull` step on top.
+- **Update checker**: `${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/update-check.mjs` — handles the 7-day on-disk cache (`~/.claude/plan-tango/.update-cache.json`), `git ls-remote --tags` query, semver comparison, silent-on-network-failure behaviour. Reused as-is; this skill only adds the `git pull` step on top.
 - **Plugin version source**: `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` — read `.version` to pass as `--current-version`.
 - **Marketplace clone**: the parent-parent of `${CLAUDE_PLUGIN_ROOT}`. The marketplace.json `source` field is `./plugins/plan-tango`, so the plugin lives at `<MARKETPLACE_ROOT>/plugins/plan-tango/`. Two `cd ..` from `CLAUDE_PLUGIN_ROOT` reaches the git repo root.
 - **User opt-out**: `update_check: false` in `~/.claude/plan-tango/config.json` blocks the SessionStart hook and Phase E notice but does NOT block this skill — running `/plan-tango:update` is an explicit user intent, so we always honour it.
@@ -54,7 +54,7 @@ CURRENT=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env
 Run update-check:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/update-check.mjs" --current-version "$CURRENT"
+node "${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/update-check.mjs" --current-version "$CURRENT"
 ```
 
 Parse the JSON response from stdout. Branch on `status`:
@@ -123,7 +123,7 @@ To activate the new version in your current Claude Code session:
 - Terminal:  /reload-plugins
 - VS Code:   Developer: Reload Window  (or restart Claude Code)
 
-After reload, run /plan-tango:run normally — the new skill code, scripts,
+After reload, run /plan-tango:tango normally — the new skill code, scripts,
 and agents will be picked up.
 ```
 

@@ -17,15 +17,15 @@ Works **inside plan mode** — no need to exit and re-enter.
 
 ## Basic usage
 
-Invoked as **`/plan-tango:run`** (or pick from the slash-command dropdown when you type `/plan-tango`).
+Invoked as **`/plan-tango:tango`** (or pick from the slash-command dropdown when you type `/plan-tango`).
 
 Without arguments: uses the active plan from the system prompt, otherwise the newest by mtime under `~/.claude/plans/`.
 
 With an explicit plan:
 ```
-/plan-tango:run <slug-or-path>
-/plan-tango:run sample-plan
-/plan-tango:run ~/.claude/plans/foo.md
+/plan-tango:tango <slug-or-path>
+/plan-tango:tango sample-plan
+/plan-tango:tango ~/.claude/plans/foo.md
 ```
 
 Persistent defaults wizard: **`/plan-tango:settings`**.
@@ -56,9 +56,9 @@ If you don't want to type `--effort medium --max-iter 8` every run, drop default
 
 ```bash
 mkdir ~/.claude/plan-tango
-cp "$(claude plugin path plan-tango)/skills/run/user-config.example.json" ~/.claude/plan-tango/config.json
+cp "$(claude plugin path plan-tango)/skills/tango/user-config.example.json" ~/.claude/plan-tango/config.json
 # If `claude plugin path` is unavailable, the typical path is:
-# ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/run/user-config.example.json
+# ~/.claude/plugins/marketplaces/plan-tango/plugins/plan-tango/skills/tango/user-config.example.json
 # then edit
 ```
 
@@ -150,14 +150,14 @@ By default the skill prints 1–2 lines per iteration (snapshot, sending-to-Code
 
 **What this flag does NOT control**: Bash IN/OUT panels are rendered by Claude Code itself (including when calls are allowlisted). To hide those panels too, configure the allowlist via `/fewer-permission-prompts`.
 
-CLI: `/plan-tango:run <slug> --quiet`. Persistent: add `"quiet": true` to `~/.claude/plan-tango/config.json` (or run `/plan-tango:settings`).
+CLI: `/plan-tango:tango <slug> --quiet`. Persistent: add `"quiet": true` to `~/.claude/plan-tango/config.json` (or run `/plan-tango:settings`).
 
 ## Fast mode (priority service tier)
 
 Codex supports a priority processing tier — ~1.5× speed at a higher per-token cost. Enable via `--fast` or `--service-tier fast`:
 
 ```
-/plan-tango:run <slug> --fast
+/plan-tango:tango <slug> --fast
 ```
 
 Under the hood: `-c service_tier="fast"` in the `codex exec` argv. This maps to `service_tier: "priority"` for the OpenAI Responses API.
@@ -178,7 +178,7 @@ Under the hood: `-c service_tier="fast"` in the `codex exec` argv. This maps to 
 service_tier = "fast"
 model_reasoning_effort = "high"
 ```
-Then: `/plan-tango:run <slug> --codex-profile review-fast`.
+Then: `/plan-tango:tango <slug> --codex-profile review-fast`.
 
 ## How the loop runs
 
@@ -292,7 +292,7 @@ Write(~/.claude/plans/*-tango.workspace/**)
 
 After the first run, invoke `/fewer-permission-prompts` — it adds an allowlist to `~/.claude/settings.json`, and subsequent runs go through without prompts.
 
-**Diagnostics**: if anything looks off (Codex CLI not found, plans dir not writable, lock stuck), run `node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/doctor.mjs` — it checks the Codex CLI, user-config parsing, write access to `~/.claude/plans/`, the lock acquire/release cycle, and `run-codex-review.mjs` error handling. All checks are read-only / dry-run; probe files are removed automatically. Add `--json` for machine-readable output.
+**Diagnostics**: if anything looks off (Codex CLI not found, plans dir not writable, lock stuck), run `node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/doctor.mjs` — it checks the Codex CLI, user-config parsing, write access to `~/.claude/plans/`, the lock acquire/release cycle, and `run-codex-review.mjs` error handling. All checks are read-only / dry-run; probe files are removed automatically. Add `--json` for machine-readable output.
 
 ### Plan mode + paths under `~/.claude/plans/` (important)
 
@@ -324,7 +324,7 @@ The skill writes state / ledger / snapshot / workspace files under `~/.claude/pl
 
 **A restart of the active Claude Code session is required after the patch** — the VS Code extension caches permissions at session start; `settings.json` changes aren't picked up live. Close the VS Code window (or re-open the workspace) → the new session loads the updated permissions.
 
-**Alternative** (if you don't want to edit global settings): run `/plan-tango:run` **outside** plan mode. Plan mode isn't required for the skill — the plan is already written, the rest is just the review loop. Normal mode with `defaultMode: "acceptEdits"` gives a silent flow without extra setup.
+**Alternative** (if you don't want to edit global settings): run `/plan-tango:tango` **outside** plan mode. Plan mode isn't required for the skill — the plan is already written, the rest is just the review loop. Normal mode with `defaultMode: "acceptEdits"` gives a silent flow without extra setup.
 
 ## Interruption and resume
 
@@ -332,7 +332,7 @@ The skill writes state / ledger / snapshot / workspace files under `~/.claude/pl
 
 **Resume from where you left off**:
 ```
-/plan-tango:run <slug-or-path> --resume
+/plan-tango:tango <slug-or-path> --resume
 ```
 
 The skill reads state, verifies the plan wasn't modified outside the skill (via `last_known_plan_hash`), and continues from the next iteration.
@@ -343,7 +343,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
 
 **"Lock held by another session"** — either another run is actually in progress, or a previous run crashed and the lock hasn't expired yet.
 
-- Check: `node "${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/lock.mjs" inspect --slug <slug>` (or the absolute path under `~/.claude/plugins/marketplaces/plan-tango/...`).
+- Check: `node "${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/lock.mjs" inspect --slug <slug>` (or the absolute path under `~/.claude/plugins/marketplaces/plan-tango/...`).
 - If no parallel run is in progress → wait up to 30 minutes (auto-stale) or pass `--takeover` after `inspect`.
 
 **"Plan modified outside skill since last completed iteration"** — someone (or you in the editor) changed the plan between iterations.
@@ -383,7 +383,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
     ├── agents/
     │   └── plan-final-checker.md             # opus, raw ALLOW/BLOCK → registered as plan-tango:plan-final-checker (Phase D only)
     └── skills/
-        ├── run/                              # main loop skill (/plan-tango:run)
+        ├── tango/                            # main loop skill (/plan-tango:tango)
         │   ├── SKILL.md                      # orchestrator instructions
         │   ├── user-config.example.json      # sample persistent defaults
         │   ├── scripts/

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.5.4-green" alt="Version 0.5.4">
+  <img src="https://img.shields.io/badge/version-0.6.0-green" alt="Version 0.6.0">
   <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-ru-red" alt="Read in Russian"></a>
 </p>
 
@@ -53,10 +53,10 @@ Or just ask the agent: "install plan-tango from github.com/egsok/plan-tango". Cl
 ## Usage
 
 ```
-/plan-tango:run                          # use the active plan from plan mode
-/plan-tango:run <slug-or-path>           # or pass a specific plan file
-/plan-tango:run --fast                   # priority service tier (~1.5× faster)
-/plan-tango:run --max-iter 10 --effort medium --lenient --quiet --fresh-each
+/plan-tango:tango                          # use the active plan from plan mode
+/plan-tango:tango <slug-or-path>           # or pass a specific plan file
+/plan-tango:tango --fast                   # priority service tier (~1.5× faster)
+/plan-tango:tango --max-iter 10 --effort medium --lenient --quiet --fresh-each
 ```
 
 Persistent defaults live in `~/.claude/plan-tango/config.json`. For an interactive wizard instead of hand-editing JSON: `/plan-tango:settings`.

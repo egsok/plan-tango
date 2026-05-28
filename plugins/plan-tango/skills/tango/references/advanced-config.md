@@ -72,7 +72,7 @@ Codex CLI looks for profiles). The wrapper passes `-p <name>` to
 `codex exec`:
 
 ```bash
-/plan-tango:run my-plan --codex-profile <profile-name>
+/plan-tango:tango my-plan --codex-profile <profile-name>
 ```
 
 Profile values are layered first; any `extra_codex_config` overrides

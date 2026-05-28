@@ -2,7 +2,7 @@
 // SessionStart hook for plan-tango — emit a one-line "update available"
 // notice when GitHub has a newer release tag than the installed plugin.
 //
-// Wraps the existing skills/run/scripts/update-check.mjs (which handles the
+// Wraps the existing skills/tango/scripts/update-check.mjs (which handles the
 // 7-day on-disk cache, semver comparison, and silent-on-network-failure
 // behavior). All this hook adds is:
 //   1. Read current plugin version from .claude-plugin/plugin.json
@@ -56,7 +56,7 @@ try {
   }
   if (typeof current !== "string") silent();
 
-  const updateCheck = path.join(pluginRoot, "skills", "run", "scripts", "update-check.mjs");
+  const updateCheck = path.join(pluginRoot, "skills", "tango", "scripts", "update-check.mjs");
   if (!existsSync(updateCheck)) silent();
 
   const result = spawnSync(process.execPath, [updateCheck, "--current-version", current], {

@@ -1,6 +1,6 @@
 ---
-name: run
-description: "Auto-converge a Claude-written plan with Codex (gpt-5) review. Loops Codex review → Claude fixes → re-review until clean ALLOW or max-iter. Works inside plan mode on the active plan file. Use when you've drafted a plan and want external AI review without manual copypaste. Invoked as /plan-tango:run."
+name: tango
+description: "Auto-converge a Claude-written plan with Codex (gpt-5) review. Loops Codex review → Claude fixes → re-review until clean ALLOW or max-iter. Works inside plan mode on the active plan file. Use when you've drafted a plan and want external AI review without manual copypaste. Invoked as /plan-tango:tango."
 argument-hint: "[plan-path-or-slug] [--max-iter N (default 6, cap 12)] [--effort none|minimal|low|medium|high|xhigh] [--model <m>] [--lenient] [--final-check] [--resume] [--takeover] [--quiet] [--verbose-report]"
 allowed-tools:
   - Read
@@ -20,8 +20,8 @@ Works inside plan mode (Read/Edit of plan-file allowed; Bash/Task via permission
 
 <execution_context>
 - **Codex CLI**: `codex exec --json --sandbox read-only -o <file>` from `run-codex-review.mjs`. Required: `codex` on PATH (`codex --version`), auth via `codex login` or `/codex:setup`.
-- **User config** (optional): `~/.claude/plan-tango/config.json`. CLI overrides. Schema: `${CLAUDE_PLUGIN_ROOT}/skills/run/user-config.example.json`.
-- **Helper scripts** at `${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/`:
+- **User config** (optional): `~/.claude/plan-tango/config.json`. CLI overrides. Schema: `${CLAUDE_PLUGIN_ROOT}/skills/tango/user-config.example.json`.
+- **Helper scripts** at `${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/`:
   - `plan-paths.mjs` (validate/newest/list-recent/resolve-repo/hash), `workspace.mjs` (ensure/cleanup), `snapshot.mjs`, `lock.mjs` (acquire/refresh/release/inspect), `apply-fixes.mjs` (dry-run classifier → edit_plan + ledger_template + advisory_plan), `parse-codex-jsonl.mjs`, `parse-codex-verdict.mjs`.
   - `load-config.mjs` — merges CLI + config + defaults; emits `{merged, sources, warnings}`.
   - `init.mjs` — orchestrates Phase A in one Bash call (validate plan + codex CLI + repo + load-config + lock + state init/resume + workspace ensure). Returns full context bundle for the orchestrator to bind, with internal lock-cleanup on partial failure.
@@ -57,7 +57,7 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
 1. **Build CLI JSON** from `$ARGUMENTS` into a flat object with these keys (using `_` for `-` per loader contract): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check`, `force_final_check`, `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. See [references/advanced-config.md](references/advanced-config.md) for alias semantics.
 2. **Run init**:
     ```bash
-    node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/init.mjs \
+    node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/init.mjs \
       --cli '<json>' \
       [--plan-arg <positional-or-empty>] \
       [--active-plan <path-from-system-prompt-or-empty>] \
@@ -88,14 +88,14 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 12. **If quiet=false**: Print `[N/max] Sending to Codex (effort=<effort>, mode=<thread_mode>, tier=<service_tier|standard>, cwd=<repo_root>)...`.
 13. **Prepare iter artifacts** via `prepare-iter.mjs` (single Bash call replaces legacy `build-prompt.mjs` + `build-params.mjs` + orchestrator-Write of `iter{N}.settings.json`). Build the codex-relevant settings JSON inline from `state.settings` (subset: `effort`, `model`, `service_tier`, `codex_profile`, `extra_codex_config` — orchestrator-only keys excluded). Then call:
     ```bash
-    node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/prepare-iter.mjs \
+    node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/prepare-iter.mjs \
       --slug <slug> --iter <N> \
       --plan <plan_path> \
       --repo-root <repo_root> --repo-evidence <repo_evidence_available> \
       --thread-mode <thread_mode> --resume-thread-id <state.codex_thread_id|null> \
       --state-settings '<json>' \
       --workspace ~/.claude/plans/{slug}-tango.workspace \
-      --template ${CLAUDE_PLUGIN_ROOT}/skills/run/references/review-prompt-template.md
+      --template ${CLAUDE_PLUGIN_ROOT}/skills/tango/references/review-prompt-template.md
     ```
     The script writes ALL three artifacts: `iter{N}.prompt.md` (template-substituted), `iter{N}.params.json` (with `resume_thread_id` rule enforced — only set when `thread_mode=continue` AND `iter>=2` AND uuid non-null; reset_block in prompt gated by the same predicate), and `iter{N}.last-message.txt` (empty stub — wrapper also clears it before spawn). Returns `{ok, prompt_file, params_file, last_message_file, prompt_lines, prompt_bytes, params_bytes}` or `{ok:false, error, detail}`.
 
@@ -106,7 +106,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - Phase D pre-gate skips Opus on `build-failed` (status not in converged-* set). Phase E renders normally. Lock release in step 30 fires.
 15. **Run Codex review** via Bash on `run-codex-review.mjs`:
     ```bash
-    node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/run-codex-review.mjs <abs-path-to-iter{N}.params.json>
+    node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/run-codex-review.mjs <abs-path-to-iter{N}.params.json>
     ```
     Returns one JSON object on stdout (full verdict shape per [references/schemas.md](references/schemas.md)). Wrapper output is lean by default for ALLOW/BLOCK (no `raw_final_message`/`raw_output_excerpt` — full text on disk at `last_message_path`); pass `--verbose-output` (or set `PLAN_TANGO_WRAPPER_VERBOSE=1`) when verbose-report path needs raw fields.
 16. **Parse verdict JSON** from the response. The wrapper returns the full shape — orchestrator does NOT re-parse the verdict text. Print (per-bullet quiet gating):
@@ -230,7 +230,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     ```bash
     # Read current plan-tango version once
     CURR_VER=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CLAUDE_PLUGIN_ROOT + '/.claude-plugin/plugin.json', 'utf8')).version)")
-    node ${CLAUDE_PLUGIN_ROOT}/skills/run/scripts/update-check.mjs --current-version "$CURR_VER"
+    node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/update-check.mjs --current-version "$CURR_VER"
     ```
 
     Parse the JSON response. The script always exits 0 and always emits JSON:
