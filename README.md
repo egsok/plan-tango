@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.6.0-green" alt="Version 0.6.0">
+  <img src="https://img.shields.io/badge/version-0.6.1-green" alt="Version 0.6.1">
   <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-ru-red" alt="Read in Russian"></a>
 </p>
 

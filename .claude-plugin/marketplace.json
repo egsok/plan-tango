@@ -3,13 +3,13 @@
   "owner": { "name": "Egor Sokolov" },
   "metadata": {
     "description": "Auto-converge a Claude-written plan via Codex (gpt-5) review iterations until clean ALLOW or max-iter.",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "plugins": [
     {
       "name": "plan-tango",
       "description": "Codex-powered plan review loop with thread reuse, fast-mode, persistent config.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "author": { "name": "Egor Sokolov" },
       "source": "./plugins/plan-tango"
     }

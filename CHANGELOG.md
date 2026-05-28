@@ -3,6 +3,11 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-05-28
+
+### Fixed
+- **Duplicate-hooks plugin error.** `claude doctor` on current Claude Code (2.1.x) reported `Hook load failed: Duplicate hooks file detected` for plan-tango. The manifest's `"hooks": "./hooks/hooks.json"` — added in 0.5.1 as belt-and-suspenders against then-flaky `hooks/hooks.json` auto-discovery — now collides with Claude Code's automatic loading of that same standard file (and newer 2.1.x added duplicate-detection on top). Removed the redundant manifest field; the standard `hooks/hooks.json` is auto-discovered and loads exactly once. Affected every install on a current Claude Code; impact was limited to the SessionStart update-notice hook failing to load plus the visible doctor error — the skills (`/plan-tango:tango`, `:settings`, `:update`) were unaffected.
+
 ## [0.6.0] — 2026-05-28
 
 ### Breaking changes
@@ -128,6 +133,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.6.1]: https://github.com/egsok/plan-tango/releases/tag/v0.6.1
 [0.6.0]: https://github.com/egsok/plan-tango/releases/tag/v0.6.0
 [0.5.4]: https://github.com/egsok/plan-tango/releases/tag/v0.5.4
 [0.5.3]: https://github.com/egsok/plan-tango/releases/tag/v0.5.3
