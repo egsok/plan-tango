@@ -79,13 +79,26 @@ function looksManual(finding) {
   return MANUAL_PATTERNS.some((re) => re.test(blob));
 }
 
-// Heuristic: does the location/fix point at a file other than the plan?
+// Heuristic: does the suggested FIX point at a file other than the plan?
 // We look for substrings that look like file paths NOT pointing at the plan.
+//
+// Deliberately scans ONLY finding.fix, NOT finding.location. The review
+// prompt defines location as "File/section: <where in the plan>" and at the
+// same time asks Codex to "ground every finding in ... repo evidence you
+// inspected" — so location routinely carries evidence citations like
+// "plan §Validation; repo evidence: etl/dashboard_export.py:891". Those are
+// citations, not edit targets. Scanning location made every well-grounded
+// critical/major finding classify as off-plan → the orchestrator stopped
+// with manual-required, disabling auto-apply for exactly the findings that
+// followed the grounding rules best. Paths inside `fix` remain a conservative
+// off-plan signal (the fix text is the actionable instruction).
 function detectOffPlanTarget(finding, planPath) {
   const planBasename = path.basename(planPath);
-  const blob = `${finding.location || ""} ${finding.fix || ""}`;
-  // Match common file-extension references.
-  const fileRefs = blob.match(/[A-Za-z0-9_\-.\/\\]+\.(?:mjs|js|ts|tsx|jsx|md|json|py|go|rs|sh|ps1|yaml|yml|toml)/gi) || [];
+  const blob = String(finding.fix || "");
+  // Match common file-extension references. Alternation is ordered so that no
+  // extension precedes its own superset (js before json/jsx used to truncate
+  // "wip_history.json" into a phantom "wip_history.js"; same for ts/tsx).
+  const fileRefs = blob.match(/[A-Za-z0-9_\-.\/\\]+\.(?:json|jsx|mjs|tsx|yaml|yml|toml|ts|js|md|py|go|rs|sh|ps1)/gi) || [];
   const offPlan = fileRefs.filter((f) => {
     const base = path.basename(f);
     return base !== planBasename;
