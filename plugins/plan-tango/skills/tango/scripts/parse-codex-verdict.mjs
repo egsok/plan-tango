@@ -8,9 +8,25 @@
 
 import { readFileSync } from "node:fs";
 
-const VERDICT_RE = /^(ALLOW|BLOCK):\s*(.*)$/;
-const FINDING_HEADER_RE = /^\s*(\d+)\.\s*\[SEVERITY:\s*(critical|major|minor|nit)\]\s*(.+?)\s*$/i;
+// Verdict line matcher. Tolerant of markdown wrapping so a reviewer that emits
+// "**ALLOW:** ...", "## BLOCK: ...", "> ALLOW: ..." or "- BLOCK: ..." still
+// parses. Leading blockquote/heading/bullet decoration is stripped, and bold
+// (**) / italic (*) markers around the keyword and colon are tolerated in both
+// "**ALLOW:**" and "**ALLOW**:" placements. Still anchored: the (decorated)
+// line must START with the keyword + colon, so mid-prose "ALLOW" won't match.
+const VERDICT_RE = /^\**\s*(ALLOW|BLOCK)\b\**\s*:\s*\**\s*(.*?)\s*\**\s*$/i;
+// Finding header. Tolerates "N." and "N)" numbering, an optional leading
+// bullet (*, -, +), and bold markers around the number and the [SEVERITY: …]
+// token (e.g. "1) **[SEVERITY: major]** Title"). The literal [SEVERITY: …]
+// token keeps this strict enough that plain prose is not misparsed.
+const FINDING_HEADER_RE = /^\s*(?:[*\-+]\s+)?\**\s*(\d+)[.)]\**\s*\**\s*\[SEVERITY:\s*(critical|major|minor|nit)\]\**\s*(.+?)\s*$/i;
 const FIELD_RE = /^\s*(File\/section|Problem|Suggested fix)\s*:\s*(.*)$/i;
+
+// Strip leading markdown decoration (blockquote >, heading #, list bullets)
+// from a line before verdict matching.
+function stripLeadingMarkdown(line) {
+  return line.replace(/^\s*(?:[#>]+\s*)?(?:[*\-+]\s+)?/, "");
+}
 
 function readStdin() {
   try {
@@ -41,12 +57,17 @@ function extractFromCodexJson(raw) {
 }
 
 function findVerdictLine(lines) {
+  // Scan the first 5 NON-EMPTY lines (not just the very first) so a short
+  // preamble before the verdict — a greeting, a "Here is my review:" line, a
+  // markdown heading — does not force a MALFORMED re-review. Each ~30-180s
+  // Codex re-review is expensive, so we parse leniently here.
+  let seenNonEmpty = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim() === "") continue;
-    const m = line.match(VERDICT_RE);
+    if (lines[i].trim() === "") continue;
+    const m = stripLeadingMarkdown(lines[i]).match(VERDICT_RE);
     if (m) return { idx: i, verdict: m[1].toUpperCase(), summary: m[2].trim() };
-    return null;
+    seenNonEmpty++;
+    if (seenNonEmpty >= 5) break;
   }
   return null;
 }
