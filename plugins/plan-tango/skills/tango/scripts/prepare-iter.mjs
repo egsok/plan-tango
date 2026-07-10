@@ -16,13 +16,17 @@
 // JSON.stringify like build-params.mjs. resume_thread_id rule (continue +
 // iter>=2 + non-null) matches build-params.mjs.
 //
+// Repo evidence is always available (the old `repo_evidence_available` flag was
+// collapsed out — see plan-paths.mjs --resolve-repo). {{REPO_EVIDENCE_NOTE}} is
+// always the "available" note, and params.json no longer carries the field. The
+// legacy `--repo-evidence` flag is still accepted but ignored (no-op).
+//
 // CLI:
 //   node prepare-iter.mjs \
 //     --slug <slug> \
 //     --iter <N> \
 //     --plan <plan_path> \
 //     --repo-root <repo_root> \
-//     --repo-evidence <true|false> \
 //     --thread-mode <fresh|continue> \
 //     --resume-thread-id <uuid|null> \
 //     --state-settings '<json>' \
@@ -55,10 +59,8 @@ import path from "node:path";
 
 // === Literals (MUST match build-prompt.mjs byte-for-byte) ===
 
-const REPO_EVIDENCE_NOTE_TRUE =
+const REPO_EVIDENCE_NOTE =
   "Repository state is available via your tools at cwd. Inspect referenced files when checking claims.";
-const REPO_EVIDENCE_NOTE_FALSE =
-  "Repository state is NOT available. Review the plan as text only — do not invent claims about repo state. Mark findings that would need repo-evidence to verify as such.";
 
 // Trailing blank line is intentional — matches the layout the orchestrator
 // previously produced (Reset block followed by an empty line before <task>).
@@ -96,7 +98,6 @@ function parseArgs(argv) {
     iter: null,
     plan: null,
     repoRoot: null,
-    repoEvidence: null,
     threadMode: null,
     resumeThreadId: null,
     stateSettings: null,
@@ -111,7 +112,9 @@ function parseArgs(argv) {
       case "--iter": args.iter = val; i++; break;
       case "--plan": args.plan = val; i++; break;
       case "--repo-root": args.repoRoot = val; i++; break;
-      case "--repo-evidence": args.repoEvidence = val; i++; break;
+      // Deprecated no-op — repo evidence is always available. Consume the
+      // value if present so a stale caller doesn't hard-fail on it.
+      case "--repo-evidence": i++; break;
       case "--thread-mode": args.threadMode = val; i++; break;
       case "--resume-thread-id": args.resumeThreadId = val; i++; break;
       case "--state-settings": args.stateSettings = val; i++; break;
@@ -120,7 +123,7 @@ function parseArgs(argv) {
       case "--help":
       case "-h":
         process.stdout.write(
-          "Usage: prepare-iter.mjs --slug <s> --iter <N> --plan <p> --repo-root <p> --repo-evidence <true|false> --thread-mode <fresh|continue> --resume-thread-id <uuid|null> --state-settings '<json>' --workspace <p> --template <p>\n"
+          "Usage: prepare-iter.mjs --slug <s> --iter <N> --plan <p> --repo-root <p> --thread-mode <fresh|continue> --resume-thread-id <uuid|null> --state-settings '<json>' --workspace <p> --template <p>\n"
         );
         process.exit(0);
         break;
@@ -129,12 +132,6 @@ function parseArgs(argv) {
     }
   }
   return args;
-}
-
-function parseBool(name, val) {
-  if (val === "true") return true;
-  if (val === "false") return false;
-  fail("invalid_arg", `${name} must be "true" or "false", got: ${JSON.stringify(val)}`);
 }
 
 function parseSettings(jsonStr) {
@@ -189,7 +186,6 @@ function main() {
     ["--iter", args.iter],
     ["--plan", args.plan],
     ["--repo-root", args.repoRoot],
-    ["--repo-evidence", args.repoEvidence],
     ["--thread-mode", args.threadMode],
     ["--state-settings", args.stateSettings],
     ["--workspace", args.workspace],
@@ -203,8 +199,6 @@ function main() {
   if (!Number.isFinite(iterNum) || iterNum < 1) {
     fail("invalid_arg", `--iter must be a positive integer, got: ${JSON.stringify(args.iter)}`);
   }
-
-  const repoEvidence = parseBool("--repo-evidence", args.repoEvidence);
 
   if (args.threadMode !== "fresh" && args.threadMode !== "continue") {
     fail("invalid_arg", `--thread-mode must be "fresh" or "continue", got: ${JSON.stringify(args.threadMode)}`);
@@ -249,7 +243,7 @@ function main() {
   // === Build prompt (byte-compat with build-prompt.mjs) ===
   let promptOut = template
     .replace("{{RESET_BLOCK}}", resetBlock ? RESET_BLOCK_LITERAL : "")
-    .replace("{{REPO_EVIDENCE_NOTE}}", repoEvidence ? REPO_EVIDENCE_NOTE_TRUE : REPO_EVIDENCE_NOTE_FALSE);
+    .replace("{{REPO_EVIDENCE_NOTE}}", REPO_EVIDENCE_NOTE);
   // {{PLAN_BODY}} replaced last with function value (regex-special-safe).
   promptOut = promptOut.replace("{{PLAN_BODY}}", () => plan);
 
@@ -261,7 +255,6 @@ function main() {
   const params = {
     prompt_file: promptFile,
     repo_root: args.repoRoot,
-    repo_evidence_available: repoEvidence,
     iter: iterNum,
     slug: args.slug,
     output_last_message_file: lastMessageFile,

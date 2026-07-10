@@ -25,7 +25,6 @@
 //     "slug": "...",
 //     "plan_path": "<abs>",
 //     "repo_root": "<abs>",
-//     "repo_evidence_available": true,
 //     "codex_version": "codex-cli 0.125.0",
 //     "settings": {...},
 //     "settings_sources": {...},
@@ -265,7 +264,6 @@ function main() {
     );
   }
   const repoRoot = repoInfo.repo_root;
-  const repoEvidenceAvailable = repoInfo.repo_evidence_available !== false;
 
   // 5. Load merged settings
   const cfgRes = runHelper("load-config.mjs", ["--merge", "--cli", args.cli]);
@@ -381,7 +379,6 @@ function main() {
       settings: cfg.merged,
       settings_sources: cfg.sources || {},
       repo_root: repoRoot,
-      repo_evidence_available: repoEvidenceAvailable,
       codex_thread_id: null,
       codex_version: codexVersion,
       polish_only_terminal: false,
@@ -417,7 +414,6 @@ function main() {
     slug,
     plan_path: canonicalPlanPath,
     repo_root: repoRoot,
-    repo_evidence_available: repoEvidenceAvailable,
     codex_version: codexVersion,
     settings: cfg.merged,
     settings_sources: cfg.sources || {},

@@ -11,7 +11,6 @@
 //   {
 //     "prompt_file":              "<abs path>",
 //     "repo_root":                "<abs path>",
-//     "repo_evidence_available":  true | false,
 //     "iter":                     <number>,
 //     "slug":                     "<string>",
 //     "output_last_message_file": "<abs path>",
@@ -162,10 +161,10 @@ function buildCodexArgs(params, { resumeThreadId }) {
     "-C", params.repo_root,
     "--json",
     "--sandbox", "read-only",
-    // v0.2 contract: repo_evidence_available is always true (see
-    // plan-paths.mjs --resolve-repo). Codex's git-repo trust check is
-    // redundant with sandbox=read-only + prompt grounding rules and
-    // refuses non-git cwds with a confusing error. Pass unconditionally.
+    // Repo evidence is always available (see plan-paths.mjs --resolve-repo).
+    // Codex's git-repo trust check is redundant with sandbox=read-only +
+    // prompt grounding rules and refuses non-git cwds with a confusing error.
+    // Pass unconditionally.
     "--skip-git-repo-check",
   ];
   args.push("-o", params.output_last_message_file);

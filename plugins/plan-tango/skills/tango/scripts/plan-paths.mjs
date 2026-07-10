@@ -7,7 +7,7 @@
 //   --list-recent [N]             Return N (default 5) recent plan files.
 //   --resolve-repo [--cwd <dir>] [--plan <path>]
 //                                 Detect repo-root via `git rev-parse --show-toplevel`.
-//                                 Returns {repo_root, repo_evidence_available}.
+//                                 Returns {repo_root}.
 //   --hash <path>                 Compute sha256 of file content; returns {ok, hash, short}.
 // Outputs JSON to stdout. Always exits 0 on successful detection (even when result
 // is "not found"); exits 1 on validation failure with structured error.
@@ -194,21 +194,15 @@ function gitTopLevel(cwd) {
 }
 
 function resolveRepoCmd(opts) {
-  // v0.2: `repo_evidence_available` is ALWAYS true. The git check used to gate
-  // it was over-defensive — it forced text-only review on legitimate cases
-  // (new project before `git init`, monorepos with non-git toolchains, code
-  // dirs without VCS metadata). Codex sandbox=read-only with cwd access can
-  // safely investigate any cwd; the prompt already instructs Codex to ground
-  // findings in actual file contents and not invent claims about repo state.
-  // If user runs from the wrong cwd, the worst case is shallow/noisy findings
-  // (Codex notes "referenced functions don't exist") — easy to spot, re-run.
+  // Repo evidence is ALWAYS available — Codex runs sandbox=read-only with cwd
+  // access and can investigate any cwd, git or not. The old git-gated
+  // `repo_evidence_available` flag was collapsed out: it forced text-only
+  // review on legitimate cases (new project before `git init`, non-git
+  // monorepos) and is redundant with run-codex-review.mjs always passing
+  // --skip-git-repo-check. This command now returns only `repo_root`.
   //
   // We still prefer a "real" repo_root when one is detectable: plan-text
-  // explicit path > git toplevel > cwd. This affects the cwd Codex spawns in,
-  // not the evidence-availability flag.
-  //
-  // Downstream contract: run-codex-review.mjs always passes
-  // --skip-git-repo-check to Codex; the field is informational, not a gate.
+  // explicit path > git toplevel > cwd. This affects the cwd Codex spawns in.
   const cwd = opts.cwd && typeof opts.cwd === "string" ? path.resolve(opts.cwd) : process.cwd();
   const planPath = opts.plan && typeof opts.plan === "string" ? opts.plan : null;
   const candidates = [];
@@ -224,19 +218,16 @@ function resolveRepoCmd(opts) {
       emit({
         ok: true,
         repo_root: top,
-        repo_evidence_available: true,
         source: `${c.source}+git`,
         candidate: c.path,
       });
       return;
     }
   }
-  // No git found in any candidate — still grant evidence access; Codex will
-  // investigate whatever's at repo_root.
+  // No git found in any candidate — Codex investigates whatever's at repo_root.
   emit({
     ok: true,
     repo_root: cwd,
-    repo_evidence_available: true,
     source: "cwd_no_git",
     note: "no git repo detected; reviewer will investigate cwd as-is. Codex grounding rules still apply.",
   });
