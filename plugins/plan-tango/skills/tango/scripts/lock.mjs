@@ -16,6 +16,7 @@
 //     "plan_path": "/abs/path/to/plan.md",
 //     "plan_hash_at_acquire": "<sha256-or-null>",
 //     "session_id": "...",
+//     "host": "hostname",
 //     "host_pid": 12345,
 //     "created_at": "ISO timestamp",
 //     "updated_at": "ISO timestamp"
@@ -24,14 +25,19 @@
 // Behavior:
 //   acquire — atomic create via fs.open(path, 'wx'). On EEXIST:
 //     - read existing lock; compute age = now - updated_at
-//     - if age < STALE_THRESHOLD_MIN and !--takeover → error lock_held
-//     - if age >= STALE_THRESHOLD_MIN → log warning, delete, retry create
-//     - if --takeover and age < STALE_THRESHOLD_MIN → error cannot_takeover_fresh_lock
+//     - PID liveness: if existing.host === this host AND the recorded
+//       host_pid is definitively gone (process.kill(pid,0) → ESRCH), the lock
+//       is treated as stale immediately regardless of age. This only ever
+//       strengthens staleness; the age TTL below is the fallback and is never
+//       weakened. Locks predating the `host` field skip this fast path.
+//     - if not stale (age < STALE_THRESHOLD_MIN and owner alive) and !--takeover → error lock_held
+//     - if stale (age >= STALE_THRESHOLD_MIN OR dead owner pid) → log warning, delete, retry create
+//     - if --takeover and lock is still fresh (not stale) → error cannot_takeover_fresh_lock
 //   refresh — read lock; require session_id match; update updated_at; atomic write via tmp+rename
 //   release — read lock; require session_id match; rmSync
 //   inspect — read lock; print contents
 
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { closeSync, openSync, writeSync, readFileSync, renameSync, rmSync, existsSync, mkdirSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
@@ -100,6 +106,23 @@ function ageMinutes(iso) {
   return (Date.now() - t) / 60000;
 }
 
+// Liveness probe for a recorded PID. Returns:
+//   true  — process exists (or exists but owned by another user: EPERM)
+//   false — process definitively gone (ESRCH)
+//   null  — unknown (bad pid, or any other error) → caller must fall back
+// Only a `false` result is safe to act on for early staleness.
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err.code === "ESRCH") return false;
+    if (err.code === "EPERM") return true;
+    return null;
+  }
+}
+
 function readLock(slug) {
   const lp = lockPath(slug);
   if (!existsSync(lp)) return null;
@@ -163,6 +186,7 @@ function acquireCmd(opts) {
     plan_path: opts.plan,
     plan_hash_at_acquire: planHash,
     session_id: sessionId,
+    host: hostname(),
     host_pid: process.pid,
     created_at: now,
     updated_at: now,
@@ -196,7 +220,16 @@ function acquireCmd(opts) {
     fail("lock_corrupt", { lock_path: lockPath(slug), corrupt_payload: existing });
   }
   const age = ageMinutes(existing.updated_at);
-  if (age < STALE_THRESHOLD_MIN) {
+  // PID-liveness fast path: if the lock was written on THIS host and the
+  // recorded owner PID is definitively gone (ESRCH), the lease is stale
+  // immediately — no need to wait out the TTL. This only strengthens
+  // staleness (never weakens it): the TTL age check remains the fallback,
+  // and we only trust a `false` (definitely-dead) probe on a matching host.
+  // Locks written before the `host` field existed simply skip this path.
+  const sameHost = typeof existing.host === "string" && existing.host === hostname();
+  const ownerDead = sameHost && pidAlive(existing.host_pid) === false;
+  const staleByAge = age >= STALE_THRESHOLD_MIN;
+  if (!staleByAge && !ownerDead) {
     if (opts.takeover) {
       fail("cannot_takeover_fresh_lock", {
         lock_age_minutes: Number(age.toFixed(2)),
@@ -216,8 +249,9 @@ function acquireCmd(opts) {
     });
   }
   // Stale lock: log and overwrite.
+  const staleReason = ownerDead ? "dead_pid" : "age";
   process.stderr.write(
-    `[plan-tango] WARNING: stale lock at ${lockPath(slug)} (age ${age.toFixed(1)} min, owner session ${existing.session_id}). Overriding.\n`,
+    `[plan-tango] WARNING: stale lock at ${lockPath(slug)} (reason ${staleReason}, age ${age.toFixed(1)} min, owner session ${existing.session_id}, pid ${existing.host_pid}). Overriding.\n`,
   );
   try {
     rmSync(lockPath(slug), { force: true });
@@ -233,6 +267,7 @@ function acquireCmd(opts) {
       lock_path: lockPath(slug),
       plan_hash: planHash,
       took_over_stale: true,
+      stale_reason: staleReason,
       previous_owner_session: existing.session_id,
       previous_age_minutes: Number(age.toFixed(2)),
     });
