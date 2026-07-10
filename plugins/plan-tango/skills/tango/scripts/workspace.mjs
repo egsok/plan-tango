@@ -47,6 +47,34 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
+// Synchronous sleep (zero-dependency) — used only for a single short retry
+// backoff. Atomics.wait on a throwaway buffer blocks the current thread.
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Remove `target` recursively, retrying once after a short delay on EBUSY.
+// EBUSY commonly occurs on Windows when the directory (or a descendant) is
+// briefly held — e.g. the process cwd was just moved out, or an editor/AV
+// still has a handle. Returns {ok:true, note?} or {ok:false, error}.
+function rmDirWithRetry(target) {
+  try {
+    rmSync(target, { recursive: true, force: false });
+    return { ok: true };
+  } catch (err) {
+    if (err && err.code === "EBUSY") {
+      sleepSync(150);
+      try {
+        rmSync(target, { recursive: true, force: false });
+        return { ok: true, note: "retried_after_ebusy" };
+      } catch (err2) {
+        return { ok: false, error: err2 };
+      }
+    }
+    return { ok: false, error: err };
+  }
+}
+
 function ensureCmd(slug) {
   const target = expectedWorkspace(slug);
   try {
@@ -120,11 +148,26 @@ function cleanupCmd(slug) {
     });
     process.exit(1);
   }
+  // If the process cwd is inside the workspace we're about to remove, the
+  // rmSync will fail with EBUSY (the dir is in use as the cwd). Move out to
+  // the plans root (the workspace's parent) first. Best-effort — the EBUSY
+  // retry below still guards other transient holders.
   try {
-    rmSync(expected, { recursive: true, force: false });
-    emit({ ok: true, path: expected });
-  } catch (err) {
-    emit({ ok: false, reason: "rm_failed", path: expected, error: String(err) });
+    const realCwd = realpathSync.native(process.cwd());
+    const relCwd = path.relative(realTarget, realCwd);
+    const cwdInside =
+      realCwd === realTarget || (!relCwd.startsWith("..") && !path.isAbsolute(relCwd));
+    if (cwdInside) {
+      process.chdir(realExpected); // plans root — parent of the workspace
+    }
+  } catch {
+    // ignore — retry-on-EBUSY still applies
+  }
+  const rmRes = rmDirWithRetry(expected);
+  if (rmRes.ok) {
+    emit(rmRes.note ? { ok: true, path: expected, note: rmRes.note } : { ok: true, path: expected });
+  } else {
+    emit({ ok: false, reason: "rm_failed", path: expected, error: String(rmRes.error) });
     process.exit(1);
   }
 }
