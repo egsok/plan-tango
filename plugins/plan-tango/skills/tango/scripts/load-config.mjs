@@ -30,10 +30,9 @@ const BUILTIN_DEFAULTS = Object.freeze({
   effort: "high",
   max_iter: 6,
   thread_mode: "continue",
-  // v0.2: default flipped from "auto" (keyword auto-gate triggered for almost
-  // every Claude Code plan → effectively always-on) to "never". User opts in
-  // via --final-check or `final_check: "always"` in config. Old "auto" and
-  // "force" values are accepted as deprecated aliases (see migration logic).
+  // Default "never"; user opts in via --final-check or `final_check: "always"`
+  // in config. The only valid values are "never" | "always" — the old "auto"
+  // and "force" aliases were removed (hard cutover).
   final_check: "never",
   lenient: false,
   service_tier: null,
@@ -53,9 +52,8 @@ const BUILTIN_DEFAULTS = Object.freeze({
 
 const VALID_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 const VALID_THREAD_MODES = new Set(["fresh", "continue"]);
-// v0.2 vocabulary: "never" | "always". Old "auto" and "force" are accepted
-// as deprecated aliases at the config-load stage and migrated before this
-// validator runs (see migrateDeprecatedConfigValues).
+// final_check vocabulary: "never" | "always". The old "auto" / "force"
+// aliases were removed — encountering them is a hard error (see validateValue).
 const VALID_FINAL_CHECK = new Set(["never", "always"]);
 const VALID_SERVICE_TIERS = new Set([null, "fast", "flex"]);
 const HARD_CAP_MAX_ITER = 12;
@@ -66,29 +64,10 @@ function defaultConfigPath() {
   return path.join(homedir(), ".claude", "plan-tango", "config.json");
 }
 
-function emitOk(merged, sources, warnings = []) {
-  // v0.2: `warnings` is an array of one-line strings to be printed by the
-  // orchestrator (typically deprecation notices). Empty array if no warnings.
-  process.stdout.write(JSON.stringify({ merged, sources, warnings }) + "\n");
-}
-
-// v0.2: deprecation aliases for `final_check` config value.
-// Migrates `auto`→`never`, `force`→`always` and appends a one-line warning.
-// Returns the normalized value (or the input unchanged for non-deprecated values).
-function migrateDeprecatedFinalCheckValue(value, source, warnings) {
-  if (value === "auto") {
-    warnings.push(
-      `[plan-tango] ${source}: final_check="auto" is deprecated; treating as "never" (the new default).`
-    );
-    return "never";
-  }
-  if (value === "force") {
-    warnings.push(
-      `[plan-tango] ${source}: final_check="force" is deprecated; treating as "always".`
-    );
-    return "always";
-  }
-  return value;
+function emitOk(merged, sources) {
+  // `warnings` is retained in the output shape (always empty now that the
+  // deprecation-alias machinery is gone) so downstream readers stay stable.
+  process.stdout.write(JSON.stringify({ merged, sources, warnings: [] }) + "\n");
 }
 
 function emitErr(code, detail, extra = {}) {
@@ -140,6 +119,10 @@ function validateValue(key, value, source) {
       }
       return;
     case "final_check":
+      if (value === "auto" || value === "force") {
+        const replacement = value === "auto" ? "never" : "always";
+        emitErr("removed_value", `final_check="${value}" was removed; use "${replacement}"`, { field: key, source, got: value });
+      }
       if (!VALID_FINAL_CHECK.has(value)) {
         emitErr("invalid_value", `final_check must be one of ${[...VALID_FINAL_CHECK].join(", ")}`, { field: key, source, got: value });
       }
@@ -189,7 +172,7 @@ function validateValue(key, value, source) {
   }
 }
 
-function loadUserConfig(configPath, warnings) {
+function loadUserConfig(configPath) {
   if (!existsSync(configPath)) {
     return { config: null, path: configPath, present: false };
   }
@@ -217,12 +200,8 @@ function loadUserConfig(configPath, warnings) {
     }
     sanitized[k] = v;
   }
-  // v0.2: migrate deprecated final_check vocabulary BEFORE strict validation,
-  // so old "auto" / "force" values don't trip the validator. Emits a warning.
-  if ("final_check" in sanitized) {
-    sanitized.final_check = migrateDeprecatedFinalCheckValue(sanitized.final_check, "config", warnings);
-  }
-  // Validate each provided value strictly
+  // Validate each provided value strictly (removed "auto"/"force" final_check
+  // aliases are rejected by validateValue with a replacement-naming error).
   for (const [k, v] of Object.entries(sanitized)) {
     validateValue(k, v, "user_config");
   }
@@ -233,16 +212,27 @@ function validateCli(cli) {
   if (cli === null || typeof cli !== "object" || Array.isArray(cli)) {
     emitErr("cli_invalid_shape", `--cli must be a JSON object`);
   }
+  // Hard cutover: the deprecated flags --no-final-check / --force-final-check
+  // were removed. Fail with a one-line error naming the replacement rather
+  // than silently migrating.
+  if ("no_final_check" in cli) {
+    emitErr(
+      "removed_flag",
+      `--no-final-check was removed; final_check defaults to "never" — just omit --final-check (or set final_check="never" in config)`,
+      { field: "no_final_check" }
+    );
+  }
+  if ("force_final_check" in cli) {
+    emitErr("removed_flag", `--force-final-check was removed; use --final-check`, { field: "force_final_check" });
+  }
   // Conflict detection: caller may pass synthetic flag-shape — handle both
   // a flat parsed-arg style and an already-mapped style.
   // Allowed flat keys (CLI flag names, post-parse):
-  //   no_final_check (bool, deprecated alias),
-  //   force_final_check (bool, deprecated alias),
-  //   final_check_flag (bool, v0.2 canonical for --final-check),
+  //   final_check_flag (bool, canonical for --final-check),
   //   continue_thread (bool), fresh_each (bool), fast (bool),
-  //   plus all CONFIGURABLE_KEYS directly.
+  //   verbose_report_flag (bool), plus all CONFIGURABLE_KEYS directly.
   const allowedExtra = new Set([
-    "no_final_check", "force_final_check", "final_check_flag",
+    "final_check_flag",
     "continue_thread", "fresh_each", "fast",
     "verbose_report_flag"
   ]);
@@ -250,16 +240,6 @@ function validateCli(cli) {
     if (CONFIGURABLE_KEYS.includes(k)) continue;
     if (allowedExtra.has(k)) continue;
     emitErr("cli_unknown_key", `--cli payload contains unknown key "${k}"`, { field: k });
-  }
-  // Conflict: --no-final-check is mutually exclusive with --final-check / --force-final-check
-  // (you can't disable AND enable simultaneously). The two enable-flags are
-  // alias-equivalent and may both be present without conflict (we just warn
-  // on the deprecated one).
-  if (cli.no_final_check === true && (cli.force_final_check === true || cli.final_check_flag === true)) {
-    emitErr(
-      "conflicting_flags",
-      "--no-final-check is mutually exclusive with --final-check / --force-final-check"
-    );
   }
   // Conflict: --continue-thread AND --fresh-each
   if (cli.continue_thread === true && cli.fresh_each === true) {
@@ -271,38 +251,17 @@ function validateCli(cli) {
   return cli;
 }
 
-function mapCliToConfig(cli, warnings) {
+function mapCliToConfig(cli) {
   const out = {};
-  // Direct passthrough for canonical keys (orchestrator may pass either style)
+  // Direct passthrough for canonical keys (removed final_check aliases are
+  // already rejected by validateCli / validateValue before this runs).
   for (const k of CONFIGURABLE_KEYS) {
     if (k in cli) {
-      // v0.2: migrate deprecated `final_check` vocabulary if passed directly
-      // via --cli (rare path, but possible).
-      if (k === "final_check") {
-        out[k] = migrateDeprecatedFinalCheckValue(cli[k], "cli", warnings);
-      } else {
-        out[k] = cli[k];
-      }
+      out[k] = cli[k];
     }
   }
-  // Synthetic flag mappings.
-  // v0.2: --final-check is canonical; --force-final-check is deprecated alias;
-  //       --no-final-check is deprecated disable-override (still works, but
-  //       always warned). All of them set the normalized final_check value.
-  if (cli.no_final_check === true) {
-    out.final_check = "never";
-    warnings.push(
-      `[plan-tango] --no-final-check is deprecated; it now sets final_check="never" for this run, overriding config. Will be removed in v0.3.`
-    );
-  }
-  if (cli.force_final_check === true) {
-    out.final_check = "always";
-    warnings.push(
-      `[plan-tango] --force-final-check is deprecated; use --final-check instead.`
-    );
-  }
+  // Synthetic flag mappings. --final-check is the only final_check flag.
   if (cli.final_check_flag === true) {
-    // Canonical --final-check flag — no warning.
     out.final_check = "always";
   }
   if (cli.continue_thread === true) out.thread_mode = "continue";
@@ -364,17 +323,14 @@ function main() {
 
   validateCli(cli);
 
-  // v0.2: collect deprecation warnings from both config-load and CLI mapping.
-  const warnings = [];
-
   const configPath = args.config || defaultConfigPath();
-  const { config: userCfg } = loadUserConfig(configPath, warnings);
+  const { config: userCfg } = loadUserConfig(configPath);
 
-  const cliCfg = mapCliToConfig(cli, warnings);
+  const cliCfg = mapCliToConfig(cli);
 
   const { merged, sources } = merge(BUILTIN_DEFAULTS, userCfg, cliCfg);
 
-  emitOk(merged, sources, warnings);
+  emitOk(merged, sources);
 }
 
 main();
