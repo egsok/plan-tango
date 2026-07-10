@@ -16,8 +16,10 @@
 //       { hash, severity, file_path, location_hint, suggested_fix, requested_file_path? }
 //     ],
 //     ledger_template: [
-//       { hash, severity, action: "applied"|"deferred"|"manual"|"off_plan_blocked",
-//         note?, requested_file_path?, suggested_fix? }
+//       { hash, severity, action: "applied"|"deferred"|"manual",
+//         note?, requested_file_path: null, suggested_fix? }
+//       // off-plan detection disabled (PR #1): action is never "off_plan_blocked",
+//       // requested_file_path is always null.
 //     ],
 //     advisory_plan: [
 //       { hash, severity, title, location, problem, fix }
@@ -27,9 +29,9 @@
 //       // Phase D step 28a-polish) to populate state.polish_advisory.
 //     ],
 //     invariant_summary: {
-//       all_in_plan: bool,
-//       off_plan_count: number,
-//       off_plan_blocking: bool   // any critical/major off-plan?
+//       all_in_plan: true,        // constant — off-plan detection disabled (PR #1)
+//       off_plan_count: 0,        // constant
+//       off_plan_blocking: false  // constant
 //     }
 //   }
 //
@@ -59,10 +61,32 @@ function shortHash(s) {
   return createHash("sha1").update(s).digest("hex").slice(0, 12);
 }
 
+// Normalize a string for hashing: lowercase, strip punctuation/symbols,
+// collapse whitespace. Makes the hash robust to trivial rewording.
+function normalizeForHash(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ") // strip punctuation & symbols
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// findingHash — stable identity of a finding across review iterations. It is
+// the key used by the orchestrator's stuck/oscillation detection, which
+// set-diffs findings_history across iterations. The old hash was
+// sha1(severity + problem[:80]); Codex reliably REWORDS the `problem` prose
+// between iterations (same defect, different sentence), so raw-problem hashing
+// almost never matched across iterations and stuck/oscillation rarely fired.
+// We instead hash `severity :: title` after normalization (lowercase, collapse
+// whitespace, strip punctuation) — `title` is the most stable signal Codex
+// emits for "the same issue". When a finding carries no title we fall back to
+// the normalized first 80 chars of `problem` (still better than raw because of
+// normalization).
 function findingHash(finding) {
-  const sev = String(finding.severity || "");
-  const head = String(finding.problem || "").slice(0, 80);
-  return createHash("sha1").update(`${sev}::${head}`).digest("hex").slice(0, 16);
+  const sev = normalizeForHash(finding.severity);
+  const title = normalizeForHash(finding.title);
+  const key = title || normalizeForHash(String(finding.problem || "").slice(0, 80));
+  return createHash("sha1").update(`${sev} :: ${key}`).digest("hex").slice(0, 16);
 }
 
 // Heuristic: does the suggested_fix or problem text imply "pick one of multiple variants"?
@@ -79,52 +103,29 @@ function looksManual(finding) {
   return MANUAL_PATTERNS.some((re) => re.test(blob));
 }
 
-// Off-plan detection by file-path MENTION is disabled entirely.
-//
-// v1 of this fix narrowed the scan from location+fix to fix-only (location
-// routinely carries evidence citations like "repo evidence: etl/foo.py:891").
-// Field data from a later real-world run showed fix-only is still not enough:
-// in plan reviews the FIX text legitimately names repo files too, because a
-// plan IS an instruction list about editing files at execution time
-// ("replace the /today references in session-start.sh", "add
-// scripts/backup.sh to Package 7"). Observed false-positive rate of
-// mention-based detection across two full converge sessions: 14 flagged /
-// 14 false, 0 true positives (2026-07-04: 11/11; 2026-07-06: 3/3 — each
-// verified by hand against the plan text).
+// Off-plan detection by file-path MENTION is disabled entirely (PR #1).
 //
 // Category error: in a plan review every "change file X" fix translates to a
 // plan-text edit, so a file mention can never distinguish "edit the plan"
-// from "edit that file now". The real protection against off-plan edits
-// lives in the orchestrator (SKILL.md step 22): it constructs Edits against
-// the plan file only, and an old_string that doesn't exist in the plan
-// simply fails. The function is kept for shape-compat — requested_file_path
-// stays in the output contract, always null.
-function detectOffPlanTarget(_finding, _planPath) {
-  return null;
-}
+// from "edit that file now" — mention-based detection produced 0 true /
+// 14 false positives across two real converge sessions. The real protection
+// against off-plan edits lives in the orchestrator (SKILL.md step 22): it
+// constructs Edits against the plan file only, and an old_string absent from
+// the plan simply fails. `requested_file_path` stays in the output contract
+// for shape-compat but is ALWAYS null, and the invariant_summary is always
+// {all_in_plan: true, off_plan_count: 0, off_plan_blocking: false}.
 
-function classifyFinding(finding, planPath, locationCounts) {
+function classifyFinding(finding, locationCounts) {
   const hash = findingHash(finding);
   const severity = String(finding.severity || "minor");
-  const offPlan = detectOffPlanTarget(finding, planPath);
-  // Manual variant detected → manual (highest priority among non-off-plan).
+  // Manual variant detected → manual (highest priority).
   if (looksManual(finding)) {
     return {
       hash,
       severity,
       classification: "manual",
       note: "multiple_variants_in_suggested_fix",
-      requested_file_path: offPlan || null,
-    };
-  }
-  // Off-plan target → deferred (orchestrator will block on critical/major separately).
-  if (offPlan) {
-    return {
-      hash,
-      severity,
-      classification: "deferred",
-      note: "off-plan-file target",
-      requested_file_path: offPlan,
+      requested_file_path: null,
     };
   }
   // Conflict: same location targeted by 2+ findings → can't auto-resolve atomically.
@@ -135,6 +136,7 @@ function classifyFinding(finding, planPath, locationCounts) {
       severity,
       classification: "deferred",
       note: "location_conflict_with_other_finding",
+      requested_file_path: null,
     };
   }
   return {
@@ -142,6 +144,7 @@ function classifyFinding(finding, planPath, locationCounts) {
     severity,
     classification: "auto",
     note: null,
+    requested_file_path: null,
   };
 }
 
@@ -163,22 +166,15 @@ function buildOutput(input) {
   }
   const unique = Array.from(seen.values());
 
-  const classified = unique.map((f) => classifyFinding(f, planPath, locationCounts));
+  const classified = unique.map((f) => classifyFinding(f, locationCounts));
 
   const edit_plan = [];
   const ledger_template = [];
   const advisory_plan = [];
-  let off_plan_count = 0;
-  let off_plan_blocking = false;
 
   for (let i = 0; i < unique.length; i++) {
     const finding = unique[i];
     const cls = classified[i];
-    const isOffPlan = !!cls.requested_file_path;
-    if (isOffPlan) off_plan_count++;
-    if (isOffPlan && (cls.severity === "critical" || cls.severity === "major")) {
-      off_plan_blocking = true;
-    }
     // advisory_plan: one entry per deduped finding regardless of classification.
     // Used by orchestrator polish-only termination branches to populate
     // state.polish_advisory; specifically covers manual-classified findings
@@ -191,12 +187,9 @@ function buildOutput(input) {
       problem: finding.problem || "",
       fix: finding.fix || "",
     });
-    // edit_plan entries:
-    //   - For 'auto': file_path = plan_path, suggestion is from the finding
-    //   - For 'deferred' off-plan: file_path = plan_path (defensive — orchestrator
-    //     re-checks invariant), requested_file_path holds what Codex wanted
-    //   - For 'manual': not added to edit_plan (skipped by orchestrator anyway,
-    //     stop condition fires first)
+    // edit_plan entries (target is always the plan file):
+    //   - For 'auto' / 'deferred': file_path = plan_path, requested_file_path null.
+    //   - For 'manual': not added to edit_plan (stop condition fires first).
     if (cls.classification !== "manual") {
       edit_plan.push({
         hash: cls.hash,
@@ -206,19 +199,16 @@ function buildOutput(input) {
         title: finding.title || "",
         problem: finding.problem || "",
         suggested_fix: finding.fix || "",
-        requested_file_path: cls.requested_file_path || null,
+        requested_file_path: null,
       });
     }
     // ledger template — orchestrator overrides 'action' after real Edit:
     //   auto → applied (or deferred if Edit fails)
     //   deferred (in-plan conflict) → deferred
-    //   deferred (off-plan, severity ≤ minor) → deferred (note set)
-    //   deferred (off-plan, severity ≥ major) → off_plan_blocked
     //   manual → manual
+    // Off-plan is disabled (PR #1), so action is never "off_plan_blocked".
     let templateAction = cls.classification;
-    if (templateAction === "deferred" && isOffPlan && (cls.severity === "critical" || cls.severity === "major")) {
-      templateAction = "off_plan_blocked";
-    } else if (templateAction === "auto") {
+    if (templateAction === "auto") {
       templateAction = "applied"; // optimistic; orchestrator may downgrade
     }
     ledger_template.push({
@@ -226,7 +216,7 @@ function buildOutput(input) {
       severity: cls.severity,
       action: templateAction,
       note: cls.note,
-      requested_file_path: cls.requested_file_path || null,
+      requested_file_path: null,
       suggested_fix: finding.fix || null,
     });
   }
@@ -237,10 +227,11 @@ function buildOutput(input) {
     edit_plan,
     ledger_template,
     advisory_plan,
+    // Off-plan detection disabled (PR #1): the invariant is a constant.
     invariant_summary: {
-      all_in_plan: off_plan_count === 0,
-      off_plan_count,
-      off_plan_blocking,
+      all_in_plan: true,
+      off_plan_count: 0,
+      off_plan_blocking: false,
     },
     findings_input_count: findings.length,
     findings_unique_count: unique.length,
@@ -298,9 +289,19 @@ async function main() {
   let input;
   try {
     input = JSON.parse(raw);
-  } catch (err) {
-    emit({ ok: false, reason: "stdin_not_json", error: String(err) });
-    process.exit(2);
+  } catch (firstErr) {
+    // Lenient retry: the orchestrator pipes JSON where plan_path carries
+    // Windows backslashes that are not JSON-escaped (e.g. "C:\Users\...") →
+    // "Bad escaped character in JSON". Escape any lone backslash (one not
+    // already introducing a valid JSON escape) and retry once. Only surface
+    // stdin_not_json if the repaired text still fails to parse.
+    try {
+      const repaired = raw.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+      input = JSON.parse(repaired);
+    } catch {
+      emit({ ok: false, reason: "stdin_not_json", error: String(firstErr) });
+      process.exit(2);
+    }
   }
   if (!input.plan_path || typeof input.plan_path !== "string") {
     emit({ ok: false, reason: "missing_plan_path" });
