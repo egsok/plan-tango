@@ -79,20 +79,28 @@ function looksManual(finding) {
   return MANUAL_PATTERNS.some((re) => re.test(blob));
 }
 
-// Heuristic: does the location/fix point at a file other than the plan?
-// We look for substrings that look like file paths NOT pointing at the plan.
-function detectOffPlanTarget(finding, planPath) {
-  const planBasename = path.basename(planPath);
-  const blob = `${finding.location || ""} ${finding.fix || ""}`;
-  // Match common file-extension references.
-  const fileRefs = blob.match(/[A-Za-z0-9_\-.\/\\]+\.(?:mjs|js|ts|tsx|jsx|md|json|py|go|rs|sh|ps1|yaml|yml|toml)/gi) || [];
-  const offPlan = fileRefs.filter((f) => {
-    const base = path.basename(f);
-    return base !== planBasename;
-  });
-  if (offPlan.length === 0) return null;
-  // Return the first non-plan file reference.
-  return offPlan[0];
+// Off-plan detection by file-path MENTION is disabled entirely.
+//
+// v1 of this fix narrowed the scan from location+fix to fix-only (location
+// routinely carries evidence citations like "repo evidence: etl/foo.py:891").
+// Field data from a later real-world run showed fix-only is still not enough:
+// in plan reviews the FIX text legitimately names repo files too, because a
+// plan IS an instruction list about editing files at execution time
+// ("replace the /today references in session-start.sh", "add
+// scripts/backup.sh to Package 7"). Observed false-positive rate of
+// mention-based detection across two full converge sessions: 14 flagged /
+// 14 false, 0 true positives (2026-07-04: 11/11; 2026-07-06: 3/3 — each
+// verified by hand against the plan text).
+//
+// Category error: in a plan review every "change file X" fix translates to a
+// plan-text edit, so a file mention can never distinguish "edit the plan"
+// from "edit that file now". The real protection against off-plan edits
+// lives in the orchestrator (SKILL.md step 22): it constructs Edits against
+// the plan file only, and an old_string that doesn't exist in the plan
+// simply fails. The function is kept for shape-compat — requested_file_path
+// stays in the output contract, always null.
+function detectOffPlanTarget(_finding, _planPath) {
+  return null;
 }
 
 function classifyFinding(finding, planPath, locationCounts) {
