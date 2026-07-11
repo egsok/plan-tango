@@ -25,6 +25,9 @@
 //     "slug": "...",
 //     "plan_path": "<abs>",
 //     "repo_root": "<abs>",
+//     "plan_file_refs_total": 12,           // relative file refs found in plan
+//     "plan_file_refs_missing": ["a/b.py"], // refs not present under repo_root
+//     "plan_file_refs_missing_fraction": 0, // advisory wrong-worktree signal
 //     "codex_version": "codex-cli 0.125.0",
 //     "settings": {...},
 //     "settings_sources": {...},
@@ -56,8 +59,8 @@
 // orchestrator can attempt cleanup in Phase E.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,6 +153,80 @@ function parseHelperJson(scriptName, result) {
 function shaFile(p) {
   const buf = readFileSync(p);
   return createHash("sha256").update(buf).digest("hex");
+}
+
+// Atomic file write: write to a unique tmp sibling then rename over the target.
+// A crash mid-write leaves the tmp file (garbage, ignored) instead of a
+// half-written/corrupt destination — critical for state.json, whose
+// corruption aborts --resume with state_invalid_json. Same pattern as
+// lock.mjs writeLockAtomic.
+function writeFileAtomic(filePath, content) {
+  const tmp = `${filePath}.tmp-${process.pid}-${randomBytes(3).toString("hex")}`;
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, filePath);
+}
+
+// === Repo pre-flight ===
+//
+// Extract conservative relative file-path references from the plan text so the
+// orchestrator can sanity-check that the plan targets the resolved repo (the
+// real-world failure: a plan aimed at a sibling worktree, D:/dev/Handy-v09 vs
+// D:/dev/Handy, burned a 51-minute run against the wrong tree).
+//
+// Conservative by design — only tokens with at least one "/" separator and a
+// file extension on the final segment count. Absolute POSIX paths, Windows
+// drive paths, URLs, and bare filenames are excluded. Capped at `cap` distinct
+// refs to stay cheap.
+const PLAN_REF_RE =
+  /^(?:\.\/)?(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$/;
+
+function extractPlanFileRefs(planText, cap = 50) {
+  const refs = [];
+  const seen = new Set();
+  const tokens = String(planText || "").split(/[\s`'"()\[\]{}<>,]+/);
+  for (const raw of tokens) {
+    if (!raw) continue;
+    // Strip trailing :line[:col] / #anchor citation suffixes and stray
+    // trailing punctuation.
+    let tok = raw.replace(/[:#].*$/, "").replace(/[.,;:]+$/, "");
+    if (tok.startsWith("./")) tok = tok.slice(2);
+    if (!tok || seen.has(tok)) continue;
+    if (tok.includes("://")) continue; // URL
+    if (/^[A-Za-z]:/.test(tok)) continue; // windows drive
+    if (tok.startsWith("/")) continue; // absolute posix
+    if (!PLAN_REF_RE.test(tok)) continue;
+    seen.add(tok);
+    refs.push(tok);
+    if (refs.length >= cap) break;
+  }
+  return refs;
+}
+
+// Report which plan-referenced files are missing under repoRoot. Never throws
+// — a read failure yields an empty report. Never aborts init.
+function planFileRefReport(planPath, repoRoot, cap = 50) {
+  let planText = "";
+  try {
+    planText = readFileSync(planPath, "utf8");
+  } catch {
+    return { plan_file_refs_total: 0, plan_file_refs_missing: [], plan_file_refs_missing_fraction: 0 };
+  }
+  const refs = extractPlanFileRefs(planText, cap);
+  const missing = [];
+  for (const ref of refs) {
+    let abs;
+    try {
+      abs = path.resolve(repoRoot, ref);
+    } catch {
+      continue;
+    }
+    if (!existsSync(abs)) missing.push(ref);
+  }
+  return {
+    plan_file_refs_total: refs.length,
+    plan_file_refs_missing: missing,
+    plan_file_refs_missing_fraction: refs.length ? missing.length / refs.length : 0,
+  };
 }
 
 // === Plan-path resolution ===
@@ -385,7 +462,7 @@ function main() {
       polish_advisory: [],
     };
     try {
-      writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n", "utf8");
+      writeFileAtomic(statePath, JSON.stringify(state, null, 2) + "\n");
     } catch (err) {
       releaseLock();
       failAfterLock(
@@ -409,11 +486,14 @@ function main() {
   }
 
   // === Success ===
+  // Repo pre-flight (advisory only — never aborts). See planFileRefReport.
+  const refReport = planFileRefReport(canonicalPlanPath, repoRoot);
   emitObj({
     ok: true,
     slug,
     plan_path: canonicalPlanPath,
     repo_root: repoRoot,
+    ...refReport,
     codex_version: codexVersion,
     settings: cfg.merged,
     settings_sources: cfg.sources || {},
