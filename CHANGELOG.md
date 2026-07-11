@@ -3,6 +3,29 @@
 All notable changes to plan-tango are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-07-11
+
+### Breaking changes
+- **`final_check` aliases removed.** The deprecated config values `auto`/`force` and the CLI flags `--no-final-check`/`--force-final-check` now fail with a hard error naming the replacement (`never`/`always`, `--final-check`). They had been warning-and-migrating since v0.2 with no external users left on them.
+
+### Fixed
+- **Mention-based off-plan detection removed** — merged [PR #1](https://github.com/egsok/plan-tango/pull/1) by @kreml9 (thanks!) plus follow-up cleanup. `detectOffPlanTarget` flagged any file path mentioned in a finding's `location`/`fix` text as an "edit outside the plan," but by contract `location` carries evidence citations ("repo evidence: etl/foo.py:891") and fix text legitimately names the files a plan is *about*. Field data across real converge sessions: 14 flagged / 14 false positives / 0 true — including one session that hit the blocking protocol 4 times and doubled its wall-clock on restarts. The real protection was always structural: `edit_plan[].file_path` is `plan_path` by classifier construction and the orchestrator only constructs Edits against plan text. `requested_file_path` is now always `null`, `invariant_summary` is the constant `{all_in_plan:true, off_plan_count:0, off_plan_blocking:false}`, and the `off-plan-target`/`off_plan_blocked` statuses are gone from the protocol.
+- **Backslash plan paths no longer kill classification.** `apply-fixes.mjs` failed with `stdin_not_json` on every run whose piped JSON contained an unescaped Windows path; it now retries the parse with lone backslashes escaped. Forward slashes remain the documented convention.
+- **Lenient Codex verdict parsing.** A preamble line before `ALLOW:`/`BLOCK:`, markdown-bold verdicts (`**BLOCK:**`), `N)` finding numbering, and bold severity headers no longer produce a MALFORMED verdict (each MALFORMED used to cost a full Codex re-review).
+- **Stable finding hashes.** Hashes now derive from normalized `severity :: title` (fallback: normalized problem prefix) instead of a raw prose slice, so the stuck/oscillation detectors survive Codex re-phrasings of the same defect.
+- **State integrity.** `state.json` writes are atomic (tmp+rename); a crash mid-write no longer bricks `--resume`.
+- **Stale locks from crashed runs are reclaimed immediately** when the recorded PID is dead on the same host (TTL fallback unchanged).
+- **Workspace cleanup survives EBUSY** when the current working directory sits inside the workspace (chdir out + one retry).
+
+### Added
+- **`commit-iter.mjs`** — deterministic, idempotent post-iteration bookkeeping (findings_history push, plan-hash recompute, thread-id persistence, iter bump, lock refresh) replacing the hand-rolled state updates the orchestrator previously improvised — one real session double-wrote `findings_history` and needed manual state surgery.
+- **`evaluate-stop.mjs`** — deterministic stop-condition evaluation (converged / stuck / oscillating / regressed / manual-required / max-iter…) replacing the LLM-computed set arithmetic in step 21. Includes a fix for a false regression trigger: a severity jump right after a fresh-thread retry no longer counts as plan regression (a fresh reviewer is just more thorough).
+- **Wrong-worktree pre-flight.** `init.mjs` now reports which files the plan references are missing under the resolved repo root; the skill warns and asks before burning iterations against the wrong checkout (one real session spent 51 minutes reviewing a plan against a sibling repo that lacked the target files).
+- **Opus final check offered at max-iter.** When the loop exhausts its budget without converging, the skill now offers the Opus sanity check — in a real session it caught a major defect Codex had missed for 6 iterations.
+
+### Removed
+- `repo_evidence_available` plumbing (a constant `true` threaded through 5 scripts and the prompt template) and the final_check deprecation-alias machinery.
+
 ## [0.6.1] — 2026-05-28
 
 ### Fixed
@@ -133,6 +156,7 @@ First version published to GitHub as a Claude Code plugin marketplace.
 - Persistent user config: `~/.claude/plan-tango/config.json` (optional; copy from `user-config.example.json`).
 - Runtime artefacts live alongside the plan file under `~/.claude/plans/<slug>-tango.*`.
 
+[0.7.0]: https://github.com/egsok/plan-tango/releases/tag/v0.7.0
 [0.6.1]: https://github.com/egsok/plan-tango/releases/tag/v0.6.1
 [0.6.0]: https://github.com/egsok/plan-tango/releases/tag/v0.6.0
 [0.5.4]: https://github.com/egsok/plan-tango/releases/tag/v0.5.4

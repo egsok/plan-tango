@@ -128,7 +128,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 
 19. **Collect this iter's finding hashes** (any non-ABORT path). Do NOT push them into `state.findings_history` here — evaluate-stop (step 21) needs the prior-iters-only window, and `commit-iter.mjs` (step 22) performs the single push after apply. `apply-fixes.mjs` derives each finding's hash as sha1 of the normalized `"severity :: title"` (fallback: normalized `problem[:80]`), so hashes are stable across re-phrasings of the same defect.
 
-20. **Dry-run classification** (only when `verdict=BLOCK` with non-empty findings): pipe `{plan_path, findings}` to `apply-fixes.mjs`. Read `classified[]`, `edit_plan[]`, `ledger_template[]`, `advisory_plan[]`, `invariant_summary`.
+20. **Dry-run classification** (only when `verdict=BLOCK` with non-empty findings): pipe `{plan_path, findings}` to `apply-fixes.mjs`. Use forward slashes in `plan_path` (same convention as steps 21/22 — the script's backslash-repair fallback is best-effort and can mangle segments starting with `r/n/t/b/f/u`). Read `classified[]`, `edit_plan[]`, `ledger_template[]`, `advisory_plan[]`, `invariant_summary`.
 
 21. **Stop conditions** — delegate to `evaluate-stop.mjs` (deterministic; replaces the hand-computed severity counts and findings_history set-diffs). Build the input JSON and pipe it in (forward-slash paths are the documented convention; the scripts also tolerate backslashes, but keep forward slashes):
     ```bash
