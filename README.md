@@ -70,7 +70,7 @@ Full reference (flag list, status codes, architecture notes) — [plugins/plan-t
 - **Snapshots and hash integrity.** Every apply phase writes `.iter{N}.bak` next to the plan. Before each iteration the plan's sha256 is compared against `last_known`; if it changed outside the loop (an IDE save, another tool), the skill stops with a clear error rather than clobbering those edits.
 - **Resume.** State is persisted after every apply phase; an interrupted run (Ctrl+C, Claude Code crash, machine reboot) picks up from the same iteration via `--resume`.
 
-Plus the smaller stuff: per-plan lock file (two parallel runs on the same plan can't clobber each other; lock becomes stale after 30 min), off-plan guard (the plugin **only** edits the plan file — if Codex asks to change code in the repo, the finding is logged as `off_plan_blocked` and skipped), and an optional Opus final sanity-check via `--final-check` for plans that touch runtime contracts (subagents / permissions / hooks / MCP).
+Plus the smaller stuff: per-plan lock file (two parallel runs on the same plan can't clobber each other; lock becomes stale after 30 min), a plan-only edit guarantee (the plugin **only ever** edits the plan file, never repo code — by construction, so there's nothing to detect or block), and an optional Opus final sanity-check via `--final-check` for plans that touch runtime contracts (subagents / permissions / hooks / MCP).
 
 ## Update
 

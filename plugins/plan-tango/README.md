@@ -39,8 +39,6 @@ Persistent defaults wizard: **`/plan-tango:settings`**.
 | `--model <m>` | unset | Specific Codex model. By default `--model` is NOT passed — Codex picks its own default from `~/.codex/config.toml`. Pass explicitly (e.g. `gpt-5.5`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`) if you need a specific one. |
 | `--lenient` | off | Stop when no critical/major remain (instead of strict ALLOW). |
 | `--final-check` | off | Opt in to Opus sanity-check on converged statuses. Sets `final_check="always"` for this run. |
-| `--no-final-check` | off | Deprecated alias — disables Opus final-check for this run (emits a warning; will be removed in v0.3). |
-| `--force-final-check` | off | Deprecated alias for `--final-check` (emits a warning; will be removed in v0.3). |
 | `--resume` | off | Resume from saved state (requires an explicit slug/path or an active plan from the system prompt). |
 | `--takeover` | off | Adopt a corrupt lock after `lock.mjs inspect` (flag is REQUIRED for corrupt locks). Stale locks (>30 min) are auto-removed without this flag (warning to stderr). Fresh locks (≤30 min) are always refused — `--takeover` does NOT override them. Use only for corrupt locks after confirming no parallel run is in progress. |
 | `--continue-thread` / `--fresh-each` | `continue` (built-in default) | Thread mode override (mutually exclusive). `continue` (default) — all iterations share one Codex thread (`codex resume`), cheaper / faster / cleaner in the Codex panel; iter ≥ 2 receive a reset-prompt block so Codex doesn't anchor on its prior output. `fresh` — each iteration is a new thread (fully independent audit). See the "Thread mode" section below. |
@@ -91,7 +89,7 @@ Fields (all optional — anything absent → built-in default):
 CLI flag > ~/.claude/plan-tango/config.json > built-in default
 ```
 
-Load-time validation: `effort` enum, `max_iter ≤ 12`, `thread_mode ∈ {fresh, continue}`, `service_tier ∈ {null, fast, flex}`, `final_check ∈ {never, always}` (legacy `auto` / `force` are accepted and auto-migrated with a warning). On any violation — abort with a clear error BEFORE the run starts.
+Load-time validation: `effort` enum, `max_iter ≤ 12`, `thread_mode ∈ {fresh, continue}`, `service_tier ∈ {null, fast, flex}`, `final_check ∈ {never, always}` (the old `auto` / `force` values were **removed in 0.7.0** — the loader now hard-errors on them naming the replacement). On any violation — abort with a clear error BEFORE the run starts.
 
 `extra_codex_config: ["key=val", ...]` — array of raw `-c key=value` strings to pass through to Codex (for flags plan-tango doesn't surface natively). Applied AFTER profile but BEFORE canonical (effort / service_tier / model win on conflict).
 
@@ -131,7 +129,7 @@ Enabled by default. Changes the loop's reaction to BLOCK verdicts based on sever
 | `severity_aware: false` (opt-out) | off | corrective iter (legacy behavior — cycles polish-fixes) |
 | `severity_aware: false` (opt-out) | on | terminal, status=`converged-lenient`, advisory **NOT** rendered (legacy `--lenient` path) |
 
-**`--lenient` does NOT skip Opus final-check** — `converged-lenient` is still eligible for the Phase D pre-gate. If you want to skip Opus, use `--no-final-check` (or `final_check: "never"` in config).
+**`--lenient` does NOT skip Opus final-check** — `converged-lenient` is still eligible for the Phase D pre-gate. Opus only runs when you opt in (`--final-check` or `final_check: "always"`); leaving `final_check` at its default `never` already skips it.
 
 **Opt-out**: config-only. Set `"severity_aware": false` in `~/.claude/plan-tango/config.json` or run `/plan-tango:settings`. There is no CLI flag on purpose (`--lenient` already occupies the explicit per-run polish-stop niche; two flags with overlapping semantics would confuse users).
 
@@ -193,7 +191,8 @@ Phase A. Init (init.mjs — single Bash call)
 Phase C. Loop (up to max-iter times)
    integrity check (sha256) → snapshot → prepare-iter.mjs (prompt+params+stub) →
    call run-codex-review.mjs → handle ERROR/MALFORMED → classify findings →
-   check stop conditions → apply fixes via Edit → update last_known_hash → refresh lock
+   check stop conditions (evaluate-stop.mjs) → apply fixes via Edit →
+   commit iteration (commit-iter.mjs: state bump + hash + findings_history + lock refresh)
 
 Phase D. Final (when status=converged* AND --final-check)
    pre-gate → Opus final-check → on critical/major: corrective iter →
@@ -203,6 +202,14 @@ Phase E. Summary
    print stats → run update-check (silent unless newer release) →
    release lock (if acquired) → optional workspace cleanup
 ```
+
+## What changed in 0.7.0
+
+- **Mention-based off-plan detection removed.** The heuristic that scanned Codex's suggested fixes for foreign file paths flagged 14 findings across sessions — 14 false positives, 0 true. The real guarantee was never the heuristic: the skill only ever constructs `Edit` calls against the plan file. The `off-plan-target` status and `off_plan_blocked` ledger action are gone.
+- **Pre-flight wrong-worktree warning.** Init now checks how many relative file paths the plan references actually exist under the resolved repo root; if most are missing it warns and asks before burning a full run from the wrong worktree.
+- **Deterministic stop + bookkeeping helpers.** `evaluate-stop.mjs` computes the stop condition and `commit-iter.mjs` performs post-iteration state/lock updates atomically (one real session had the hand-rolled version double-push its findings history).
+- **Lenient verdict parsing.** The verdict/finding parser now tolerates markdown decoration and a verdict line anywhere in the first few non-empty lines.
+- **Breaking:** the deprecated `final_check` aliases `auto` / `force` (and the `--no-final-check` / `--force-final-check` flags) now hard-error instead of silently migrating — update any config to `never` / `always`.
 
 ## Possible terminal statuses
 
@@ -220,7 +227,6 @@ Phase E. Summary
 | `regressed` | Critical-finding count grew after applying fixes | Roll back via snapshot |
 | `max-iter-reached` | Iteration cap hit; "Stop here" picked at continue-prompt | Read findings, finish manually or re-run with a larger `--max-iter` (cap 12) |
 | `aborted-by-user` | "Abort run" picked at continue-prompt | Lock released, ledger closed. State preserved — `--resume` if you change your mind |
-| `off-plan-target` | Codex/Opus asked to edit a file outside the plan | Skill forbids it; apply the change to code manually |
 | `external-modification` | Plan was edited outside the skill during the cycle | Decide — continue with the new state or roll back |
 | `final-check-malformed` | Opus returned non-ALLOW/BLOCK even after retry | Run final-check manually with the same plan |
 | `final-recheck-error` / `final-recheck-malformed` | Codex re-review after final-fix failed | Check `stderr_tail`, retry later |
@@ -255,11 +261,10 @@ foo-tango.workspace/                # temp prompts/params (cleaned up on success
 | `action` | When |
 |---|---|
 | `applied` | Edit succeeded, plan modified |
-| `deferred` | apply-fixes couldn't apply (conflict / ambiguity OR off-plan minor/nit) |
+| `deferred` | apply-fixes couldn't apply (anchor conflict / ambiguity / edit rejected) |
 | `manual` | Codex offered multiple variants |
 | `advisory` | Polish-only finding — surfaced in §6, not applied |
 | `ignored_minor_nit` | Final-check minor/nit, non-blocking |
-| `off_plan_blocked` | Critical/major finding pointed at a file outside the plan — blocked |
 
 ## Permissions on first run
 
@@ -277,6 +282,8 @@ Bash(node *plan-tango/scripts/snapshot.mjs *)
 Bash(node *plan-tango/scripts/workspace.mjs *)
 Bash(node *plan-tango/scripts/lock.mjs *)
 Bash(node *plan-tango/scripts/apply-fixes.mjs *)
+Bash(node *plan-tango/scripts/evaluate-stop.mjs *)     # deterministic stop-condition eval
+Bash(node *plan-tango/scripts/commit-iter.mjs *)       # deterministic post-iteration bookkeeping
 Bash(node *plan-tango/scripts/update-check.mjs *)      # end-of-Phase-E version check
 Bash(node *plan-tango/scripts/doctor.mjs *)            # diagnostics (when invoked manually)
 Bash(codex --version)                                  # version check inside init.mjs
@@ -359,10 +366,7 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
 
 **`status=stuck` or `oscillating`** — Codex is jammed. Read the ledger, find the problematic section, rewrite it manually, then re-run the skill.
 
-**`status=off-plan-target`** — Codex/Opus asked to edit a file outside the plan.
-
-- Expected: the skill edits ONLY the plan file. If the finding is meaningful → make the code change manually.
-- If the finding is wrong — it's logged in the ledger as `off_plan_blocked` with `requested_file_path` and `suggested_fix`.
+**"Most plan file refs are missing under `<repo_root>`"** — the pre-flight found that over half the relative paths the plan references don't exist under the resolved repo root. Usually means the run was launched from the wrong worktree. Abort and re-run from the correct repo root, or continue anyway if the plan legitimately references files that don't exist yet.
 
 **Nothing happens after `run-codex-review.mjs` is called** — Codex can think for 30–90 seconds on `effort=high`. That's normal.
 
@@ -397,8 +401,10 @@ The skill reads state, verifies the plan wasn't modified outside the skill (via 
         │   │   ├── plan-paths.mjs            # validate / newest / list-recent / resolve-repo / hash
         │   │   ├── snapshot.mjs              # fs.copyFileSync with timestamp+hash
         │   │   ├── workspace.mjs             # ensure / cleanup with realpath+lstat guard
-        │   │   ├── lock.mjs                  # lease-lock with session_id
+        │   │   ├── lock.mjs                  # lease-lock with session_id (host + dead-PID stale)
         │   │   ├── apply-fixes.mjs           # pure classifier (auto / deferred / manual)
+        │   │   ├── evaluate-stop.mjs         # deterministic stop-condition evaluation (Phase C)
+        │   │   ├── commit-iter.mjs           # deterministic post-iteration bookkeeping (state + lock)
         │   │   └── update-check.mjs          # end-of-Phase-E version check vs GitHub
         │   └── references/
         │       ├── review-prompt-template.md # XML prompt for Codex (with {{RESET_BLOCK}} for continue mode)
