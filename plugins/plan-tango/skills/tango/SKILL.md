@@ -35,7 +35,7 @@ Works inside plan mode (Read/Edit of plan-file allowed; Bash/Task via permission
 Args from `$ARGUMENTS`:
 - positional `plan-path-or-slug` — optional. If absent: active plan from system prompt → newest in `~/.claude/plans/` → AskUserQuestion. **Exception**: `--resume` disables the `--newest` fallback (see Phase A).
 **Common flags**:
-- `--max-iter N` (default 6, hard cap 12; at the cap step 21h prompts +4 / custom / stop / abort).
+- `--max-iter N` (default 6, hard cap 12; at the cap step 21's max-iter-reached handling prompts +4 / custom / stop / abort).
 - `--effort none|minimal|low|medium|high|xhigh` (default `high`; `minimal` is rejected by Codex when image_gen/web_search are on — use `low` for fast).
 - `--model <m>` (default unset — Codex picks from `~/.codex/config.toml`).
 - `--lenient` — stop on "no critical/major" instead of strict ALLOW.
@@ -45,7 +45,7 @@ Args from `$ARGUMENTS`:
 - `--quiet` — suppress per-iteration progress in Phase C. Phase A heads-up, Phase B init, ERROR/MALFORMED bullets, ABORT messages, AskUserQuestion prompts, and Phase E final report ALWAYS print.
 - `--verbose-report` — opt in to Phase E §3 (convergence table) + §5 (narrative). Default off; §1+§2+§4 (and §6 when polish_only_terminal) always render.
 
-Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2). Advanced flags — `--continue-thread` / `--fresh-each` (override thread mode), `--service-tier <fast|flex>`, `--fast`, `--codex-profile <name>`, `extra_codex_config` (config field) — and the legacy deprecated-alias flags / config values are documented in [references/advanced-config.md](references/advanced-config.md). The loader (`load-config.mjs`) accepts deprecated aliases, migrates them to the canonical setting, and prints a one-line warning per run (orchestrator surfaces these via step 8.5).
+Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iteration>` block at iter ≥ 2). Advanced flags — `--continue-thread` / `--fresh-each` (override thread mode), `--service-tier <fast|flex>`, `--fast`, `--codex-profile <name>`, `extra_codex_config` (config field) — are documented in [references/advanced-config.md](references/advanced-config.md). The loader (`load-config.mjs`) emits a `warnings` array the orchestrator surfaces (Phase A step 4). The removed final_check aliases (`--no-final-check` / `--force-final-check`, config `auto` / `force`) are no longer migrated — the loader hard-errors naming the canonical replacement (`--final-check`, `never` / `always`).
 </context>
 
 <process>
@@ -54,7 +54,7 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
 
 `init.mjs` consolidates Phase A+B (formerly 11 stepped operations) into one Bash call. Internally it composes existing helpers (`plan-paths`, `load-config`, `lock`, `workspace`) — no new logic, just chained orchestration with internal cleanup on failure.
 
-1. **Build CLI JSON** from `$ARGUMENTS` into a flat object with these keys (using `_` for `-` per loader contract): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `no_final_check`, `force_final_check`, `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. See [references/advanced-config.md](references/advanced-config.md) for alias semantics.
+1. **Build CLI JSON** from `$ARGUMENTS` into a flat object with these keys (using `_` for `-` per loader contract): `max_iter`, `effort`, `model`, `lenient`, `quiet`, `verbose_report_flag`, `final_check_flag` (canonical, set by `--final-check`), `continue_thread`, `fresh_each`, `fast`, `service_tier`, `codex_profile`. Only pass `no_final_check` / `force_final_check` if the user literally typed the removed `--no-final-check` / `--force-final-check` flags — the loader hard-errors on them naming the canonical `--final-check` (do not synthesize them otherwise). See [references/advanced-config.md](references/advanced-config.md) for the advanced flags.
 2. **Run init**:
     ```bash
     node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/init.mjs \
@@ -63,18 +63,19 @@ Default thread mode is `continue` (reuses one Codex thread; injects `<reset_iter
       [--active-plan <path-from-system-prompt-or-empty>] \
       [--resume] [--takeover]
     ```
-    Init resolves plan-path (priority: positional > active-plan > newest under `~/.claude/plans/`; `--resume` disables the newest fallback per Resume-safety invariant), validates the plan (size ≥ 200 bytes, realpath under `~/.claude/plans/`), verifies `codex --version`, resolves repo-root (`repo_evidence_available` is always `true` in v0.2 — old git-required gate retired), loads + validates merged settings, **acquires the lock first**, writes (or loads + hash-checks for resume) `state.json`, and ensures the workspace dir.
+    Init resolves plan-path (priority: positional > active-plan > newest under `~/.claude/plans/`; `--resume` disables the newest fallback per Resume-safety invariant), validates the plan (size ≥ 200 bytes, realpath under `~/.claude/plans/`), verifies `codex --version`, resolves repo-root, runs the plan-file-ref pre-flight (`plan_file_refs_total`, `plan_file_refs_missing`, `plan_file_refs_missing_fraction` — a wrong-worktree signal computed over relative refs only, capped at 50; init NEVER aborts on it), loads + validates merged settings, **acquires the lock first**, writes (or loads + hash-checks for resume) `state.json`, and ensures the workspace dir.
 
-    On stdout one JSON object: success — `{ok:true, slug, plan_path, repo_root, repo_evidence_available, codex_version, settings, settings_sources, warnings, lock_acquired:true, lock_session_id, lock_took_over_stale, state_path, state, is_resume, workspace_path}`. Failure — `{ok:false, abort_reason, error, lock_acquired, lock_session_id?, slug?}`.
+    On stdout one JSON object: success — `{ok:true, slug, plan_path, repo_root, plan_file_refs_total, plan_file_refs_missing, plan_file_refs_missing_fraction, codex_version, settings, settings_sources, warnings, lock_acquired:true, lock_session_id, lock_took_over_stale, state_path, state, is_resume, workspace_path}`. Failure — `{ok:false, abort_reason, error, lock_acquired, lock_session_id?, slug?}`.
 3. **On `ok:false`**:
     - If `lock_acquired === true` (race fallback — internal cleanup in init failed): release via `lock.mjs release --slug <slug> --session <lock_session_id>`. On `session_mismatch` log a warning, do NOT delete.
     - **Always print** `error` to user. ABORT with `abort_reason` (which is one of: `missing_cli`, `unknown_flag`, `no_plan_resolved`, `resume_no_plan`, `plan_invalid`, `codex_cli_missing`, `repo_resolve_failed`, `config_invalid`, `max_iter_cap`, `lock_held`, `lock_corrupt`, `cannot_takeover_fresh_lock`, `lock_failed`, `resume_no_state`, `state_unreadable`, `state_invalid_json`, `resume_hash_mismatch`, `state_write_failed`, `workspace_failed`).
     - The orchestrator does NOT touch state/workspace itself in any failure path — init handled (or did not reach) those side effects.
 4. **On `ok:true`**:
-    - Bind for the rest of the run: `state` (full object), `slug`, `plan_path`, `repo_root`, `repo_evidence_available`, `state_path`, `lock_session_id` (used in step 22 lock.refresh and step 30 lock.release), `lock_acquired = true`, `is_resume`, **`settings` (top-level from init output — this is the fresh loader output for *this* invocation; distinct from `state.settings` which is persisted at first-run and stays stable across `--resume`).** **Verify defensively**: `state.settings.max_iter ≤ 12` (step 21h re-checks at continue-prompt time).
+    - Bind for the rest of the run: `state` (full object), `slug`, `plan_path`, `repo_root`, `state_path`, `lock_session_id` (used in step 22 commit-iter lock refresh and step 30 lock.release), `lock_acquired = true`, `is_resume`, **`settings` (top-level from init output — this is the fresh loader output for *this* invocation; distinct from `state.settings` which is persisted at first-run and stays stable across `--resume`).** **Verify defensively**: `state.settings.max_iter ≤ 12` (step 21 re-checks at the max-iter continue-prompt).
     - **When to read `settings` vs `state.settings`**: most runtime decisions read `state.settings` (max_iter, effort, thread_mode, final_check, lenient, severity_aware, verbose_report) — these were settled at first-run for resume-stability. Step 29.5 update-check reads `settings.update_check` (top-level, fresh) so a user who edited `~/.claude/plan-tango/config.json` between runs can flip the opt-out without re-starting from scratch.
     - **Print each `warnings` entry** to the user (deprecation notices). Always print, even with `--quiet`.
     - If `lock_took_over_stale === true`, log: "Took over stale lock from prior session."
+    - **Wrong-worktree guard**: if `plan_file_refs_missing_fraction > 0.5` AND `plan_file_refs_total >= 4`, most relative paths the plan references don't exist under `repo_root` — likely the run was launched from the wrong repo root (this has burned ~50-minute runs). Print the missing list (show up to ~10) and AskUserQuestion: "Most plan file refs are missing under {repo_root} — continue anyway / abort / re-run with the correct repo root?". On **abort** or **re-run** → ABORT the run (release lock via the step 30 path; for re-run, tell the user to relaunch from the correct repo root). On **continue anyway** → proceed. Skip this check entirely when the guard condition is not met.
     - **Heads-up**: print "Will call Bash(node run-codex-review.mjs) up to {state.settings.max_iter} times. Allowlist via `/fewer-permission-prompts` if you'll use this often."
 
 State shape, params shape, ledger shape: see [references/schemas.md](references/schemas.md).
@@ -91,7 +92,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/prepare-iter.mjs \
       --slug <slug> --iter <N> \
       --plan <plan_path> \
-      --repo-root <repo_root> --repo-evidence <repo_evidence_available> \
+      --repo-root <repo_root> \
       --thread-mode <thread_mode> --resume-thread-id <state.codex_thread_id|null> \
       --state-settings '<json>' \
       --workspace ~/.claude/plans/{slug}-tango.workspace \
@@ -114,11 +115,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - `verdict=ERROR` — **always print**: `[N/max] ERROR — reason={reason}, exit_code={ec}`.
     - `verdict=MALFORMED` — **always print**: `[N/max] MALFORMED — reason={reason}`.
 
-16.5. **Save thread_id to state** (when wrapper produced a `session_id`): apply this rule to `state.codex_thread_id`:
-    - `response.fallback_to_fresh === true` → always overwrite `state.codex_thread_id = response.session_id`. Log: "Thread <old> lost, switched to <new>."
-    - Else if `thread_mode === "continue"` AND `state.codex_thread_id === null` AND `session_id !== null` → save (first iter in continue mode opens the persistent thread).
-    - Else → leave unchanged.
-    Write state immediately so Ctrl-C between iters preserves the thread for `--resume`.
+16.5. **Capture thread_id** (when wrapper produced a `session_id`): hold `response.session_id` and `response.fallback_to_fresh` for this iter and pass both to `commit-iter.mjs` (step 22), which persists `state.codex_thread_id` per this rule: `fallback_to_fresh === true` → overwrite (log "Thread <old> lost, switched to <new>."); else if `state.codex_thread_id === null` AND `session_id !== null` → set (first iter in continue mode opens the persistent thread); else leave unchanged. On a terminal break before apply (no commit-iter call), the thread id is not persisted — a subsequent `--resume` re-opens a fresh thread, which is acceptable.
 
 17. **If `verdict == ERROR`** (handle BEFORE classification):
     - `reason=codex_nonzero_exit` AND stderr contains `ENOENT|auth|401|not logged in` → ABORT, suggest: "Run `codex login` (or `/codex:setup`) and re-run."
@@ -129,49 +126,60 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 
 18. **If `verdict == MALFORMED`**: one retry (re-spawn same params; fresh thread, Codex may format better). If retry MALFORMED → ABORT, show raw_final_message. If retry succeeded → re-handle through 17.
 
-19. **Update state** (any non-ABORT path): append current findings hashes to `findings_history`, drop oldest if length > 3.
+19. **Collect this iter's finding hashes** (any non-ABORT path). Do NOT push them into `state.findings_history` here — evaluate-stop (step 21) needs the prior-iters-only window, and `commit-iter.mjs` (step 22) performs the single push after apply. `apply-fixes.mjs` derives each finding's hash as sha1 of the normalized `"severity :: title"` (fallback: normalized `problem[:80]`), so hashes are stable across re-phrasings of the same defect.
 
 20. **Dry-run classification** (only when `verdict=BLOCK` with non-empty findings): pipe `{plan_path, findings}` to `apply-fixes.mjs`. Read `classified[]`, `edit_plan[]`, `ledger_template[]`, `advisory_plan[]`, `invariant_summary`.
 
-21. **Stop conditions** (priority order):
-    a) `verdict == ALLOW` and findings empty → BREAK status=`converged`.
-    a2) **Severity-aware polish-only stop** (default, see `severity_aware` setting): `severity_aware=true` AND `verdict=BLOCK` AND `findings.length>0` AND `count(critical) + count(major) === 0` → BREAK. Status branches on lenient: `lenient ? "converged-lenient" : "converged-with-polish"`.
-       - **Hash sourcing**: build `state.polish_advisory = [...advisory_plan]` (covers ALL deduped findings including manual-classified, unlike `edit_plan[]`). Set `state.polish_only_terminal = true`.
-       - **Ledger**: append `iteration_kind="normal"` entries, one per polish_advisory record: `{hash, severity, action: "advisory", note: "polish_only_terminal"}`.
-       - **Apply phase NOT called.** Plan file is not modified at this stop.
-       - Falls through to Phase D pre-gate (Opus may catch architectural issues Codex missed).
-    b) Any classified finding with `classification=manual` → BREAK status=`manual-required`. **v0.2:** print the manual-flagged findings (severity, title, location, problem, suggested_fix) so the user can decide outside the skill — edit the plan manually and re-run, or re-run with different `--effort`. The legacy AskUserQuestion apply-A/apply-B/skip/abort UI is removed; MANUAL_PATTERNS regex in `apply-fixes.mjs` still flags findings (so they don't auto-apply).
-    c) Any classified finding with `severity ∈ {critical, major}` AND `classification=deferred` → BREAK status=`manual-required` (same branch).
-    d) `--lenient` set AND `BLOCK` with findings AND zero critical/major → BREAK status=`converged-lenient`. Checked AFTER b/c so lenient cannot bypass manual. Unreachable when `severity_aware=true` (a2 fires first).
-    e) **Oscillation**: any finding hash in `findings_history[N-2]` but NOT `findings_history[N-1]` → BREAK status=`oscillating`.
-    f) **Stuck**: `findings_history[N-1]` set equals current findings set → BREAK status=`stuck`.
-    g) **Regression**: count(critical) in current > count(critical) in N-1 → BREAK status=`regressed`. Offer rollback to `iter{N-1}.bak`.
-    h) `N === state.settings.max_iter` (last permitted iter in current cap) → **interactive continue-prompt** (do NOT break immediately). AskUserQuestion: "Reached max-iter limit ({max_iter}). Current findings: {C} critical, {M} major, {m} minor, {n} nit. Continue?" Options: "Continue +4", "Continue +N (custom)", "Stop here (status=max-iter-reached)", "Abort run".
-       - On stop → BREAK status=`max-iter-reached`. On abort → BREAK status=`aborted-by-user`.
+21. **Stop conditions** — delegate to `evaluate-stop.mjs` (deterministic; replaces the hand-computed severity counts and findings_history set-diffs). Build the input JSON and pipe it in (forward-slash paths are the documented convention; the scripts also tolerate backslashes, but keep forward slashes):
+    ```bash
+    printf '%s' '<json>' | node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/evaluate-stop.mjs
+    ```
+    Input: `{verdict, findings, classified, settings:{severity_aware, lenient, max_iter}, current_iter:N, history, prev_severity_counts?, fresh_thread_fallback?}` where:
+    - `findings` = this iter's verdict findings; `classified` = step 20 output (empty array on ALLOW).
+    - `settings.*` from `state.settings`.
+    - `history` = `state.findings_history` — prior iters only, oldest first, NOT this iter's hashes (they are not pushed until step 22).
+    - `prev_severity_counts` = the previous iter's `severity_counts` (from the prior ledger entry; omit on iter 1) — enables regression detection.
+    - `fresh_thread_fallback` = `response.fallback_to_fresh`.
+    Returns `{ok:true, action:"continue"|"break", status, reason, human_note}`. Exit 2 only on malformed input (skill bug → ABORT and dump the JSON). Branch priority (a → a2 → b → c → d → e-oscillation → f-stuck → g-regression → h-max-iter → continue) is enforced inside the script; off-plan branches are gone.
+
+    **Map the returned `status` to handling** (keep these human-facing behaviors):
+    - `action:"continue"` (status `continue`) → proceed to step 22 apply. If `reason === "regression_suppressed_fresh_thread"`, print `human_note` (a fresh-thread reviewer being more thorough is not a regression).
+    - `converged` → BREAK.
+    - `converged-with-polish` / `converged-lenient` (severity-aware polish-only stop) → BREAK. Build `state.polish_advisory = [...advisory_plan]` (covers ALL deduped findings incl. manual-classified, unlike `edit_plan[]`); set `state.polish_only_terminal = true`; append `iteration_kind="normal"` ledger entries, one per polish_advisory record: `{hash, severity, action:"advisory", note:"polish_only_terminal"}`. **Apply phase NOT called** — plan file unchanged. Falls through to Phase D pre-gate (Opus may catch architectural issues Codex missed).
+    - `manual-required` → BREAK. Print the manual-flagged findings (severity, title, location, problem, suggested_fix) so the user can decide outside the skill — edit the plan manually and re-run, or re-run with different `--effort`. (MANUAL_PATTERNS regex in `apply-fixes.mjs` flags these so they never auto-apply.)
+    - `oscillating` / `stuck` → BREAK. (`stuck` = identical finding set two iters running; `oscillating` = a finding resolved then reappeared.)
+    - `regressed` → BREAK. Offer rollback to `iter{N-1}.bak`.
+    - `max-iter-reached` → **interactive continue-prompt** (do NOT break immediately). AskUserQuestion: "Reached max-iter limit ({max_iter}). Current findings: {C} critical, {M} major, {m} minor, {n} nit. Continue?" Options: "Continue +4", "Continue +N (custom)", "Stop here (status=max-iter-reached)", "Abort run".
+       - On abort → BREAK status=`aborted-by-user`.
        - On continue: `new_max = max_iter + extra`. **Hard cap**: if `new_max > 12` → refuse with "Hard cap is 12. For larger budgets re-run with explicit `--max-iter <N>` (still capped at 12) or split the plan." Re-prompt with Stop/Abort only. Otherwise update `state.settings.max_iter`, write state, log "Continuing to iter {next} (new cap: {new_max})", fall through to step 22.
-    (`ALLOW + findings` and `BLOCK + zero findings` are caught upstream by the parser as MALFORMED.)
+       - On stop → BREAK status=`max-iter-reached`. **Then, if `state.settings.final_check !== "always"`, AskUserQuestion offering one Opus final-check on the current plan** (a real session shipped an undetected major that only Opus caught after max-iter). On accept → run step 26 (spawn `plan-tango:plan-final-checker`, `mode="full"`) and surface its verdict as advisory — no corrective iter; on decline → Phase E.
+    (`ALLOW + findings` and `BLOCK + zero findings` are caught upstream by the parser as MALFORMED, so evaluate-stop only ever sees a clean ALLOW/BLOCK.)
 
-22. **Apply phase** (only when classification produced edit_plan with at least one auto entry).
+22. **Apply phase + commit** (runs on every `action:"continue"` iteration). The **Edit loop** below runs only when classification produced at least one `auto` entry; a deferred/advisory-only iter skips the Edit loop but STILL writes ledger entries and calls `commit-iter.mjs` (otherwise `state.iter` never advances and oscillation/stuck detection breaks).
 
-    **`apply-fixes.mjs` is a CLASSIFIER ONLY**: it returns metadata (`{hash, severity, file_path, location_hint, title, problem, suggested_fix, requested_file_path?}` + classification `auto`/`deferred`/`manual`). The orchestrator converts each classified finding into a real `Edit` call by interpreting Codex's natural-language `suggested_fix` against the plan text — there is no automatic translation from finding to old_string/new_string.
+    **`apply-fixes.mjs` is a CLASSIFIER ONLY**: it returns metadata (`{hash, severity, file_path, location_hint, title, problem, suggested_fix}` + classification `auto`/`deferred`/`manual`). The orchestrator converts each classified finding into a real `Edit` call by interpreting Codex's natural-language `suggested_fix` against the plan text — there is no automatic translation from finding to old_string/new_string.
 
-    - **Off-plan invariant check**: live `apply-fixes.mjs` always sets `edit_plan[i].file_path = plan_path` for non-manual entries (target is always the plan file). Off-plan findings are signaled via `edit_plan[i].requested_file_path !== null` AND/OR `invariant_summary.off_plan_count > 0` / `off_plan_blocking === true`. Detect off-plan via `requested_file_path`, NOT by comparing `file_path` to `plan_path` (always equal by construction).
-      - For each `edit_plan[i]` with `requested_file_path !== null`:
-        - severity ∈ {critical, major} → BREAK status=`off-plan-target`. Append ledger entries `iteration_kind="normal"`, `action="off_plan_blocked"`, fields `requested_file_path` and `suggested_fix`. Show user the list and stop.
-        - severity ∈ {minor, nit} → log `action=deferred`, `note="off-plan-file target"` and `requested_file_path`, but continue applying in-plan entries.
-      - Cross-check `invariant_summary.off_plan_blocking`: if true and we did not break above, that's a logic bug — abort status=`off-plan-target` and dump the full classified array.
+    - **Plan-only invariant**: `apply-fixes.mjs` always sets `edit_plan[i].file_path = plan_path` by construction, so every Edit targets the plan file. `invariant_summary` is the constant `{all_in_plan:true, off_plan_count:0, off_plan_blocking:false}` and `requested_file_path` is always `null` (mention-based off-plan detection was removed in 0.7.0 — see `<critical_invariants>`). No pre-Edit off-plan check is needed.
 
-    - **Apply** (per in-plan auto entry; process severity-first across the batch — critical → major → minor → nit):
+    - **Apply** (per auto entry; process severity-first across the batch — critical → major → minor → nit):
       1. **Re-read plan content** before each finding (earlier Edits in this iter change the text).
       2. **Anchor search**: extract a unique anchor from `location_hint` or a quoted snippet inside `problem`/`suggested_fix`. Not found → `action=deferred`, `note="anchor_not_found"`. Ambiguous (>1 match without line-number disambiguation) → `action=deferred`, `note="anchor_ambiguous"`. Anchor clobbered by an earlier Edit this iter → `action=deferred`, `note="anchor_clobbered_by_earlier_edit"`. Unique → proceed.
       3. **Construct Edit** by interpreting `suggested_fix` against the matched section. Minimal `old_string`/`new_string`, tight scope (do not rewrite surrounding paragraphs). For non-mechanical intent ("add error handling" etc.), best interpretation that satisfies the intent; prefer additive over restructuring.
       4. **Execute Edit**. On error → `action=deferred`, `note="edit_tool_rejected: <error_short>"`. On success → `action=applied`, record `edit_summary` (e.g. "+5/-2 lines in §Phase B").
       5. **Verify**: re-grep the anchor area (defense against accidental no-op when old_string===new_string).
-    - **Append ledger entries** to `~/.claude/plans/{slug}-tango.ledger.json` (create with skeleton on first write). Per-finding shape see [references/schemas.md](references/schemas.md).
-    - **Update last_known_plan_hash**: `sha256(updated_plan_file)` → state.
-    - **Refresh lock**: `lock.mjs refresh --slug <slug> --session <session_id> --plan-hash <new_hash>`. On `session_mismatch` → ABORT (someone took over).
+    - **Append ledger entries** to `~/.claude/plans/{slug}-tango.ledger.json` (create with skeleton on first write). Per-finding shape see [references/schemas.md](references/schemas.md). `commit-iter.mjs` does NOT touch the ledger — these per-finding entries are still written by the orchestrator during apply.
+    - **Commit the iteration** via `commit-iter.mjs` (deterministic bookkeeping — replaces the hand-rolled findings_history push, last_known_plan_hash recompute, thread-id persistence, iter bump, and lock refresh, which one real session got wrong by double-pushing findings_history). Pipe JSON to stdin (forward-slash paths):
+        ```bash
+        printf '%s' '<json>' | node ${CLAUDE_PLUGIN_ROOT}/skills/tango/scripts/commit-iter.mjs
+        ```
+        stdin: `{state_path, iter:N, plan_path, finding_hashes:[...], verdict, codex_thread_id:<session_id|null>, fallback_to_fresh, lock:{slug, session_id}, history_window:3}`. It refreshes the lock FIRST (session mismatch aborts WITHOUT committing), then recomputes `last_known_plan_hash` from the (edited) plan file, pushes the finding-hash set into `findings_history` (trimmed to `history_window`), persists `codex_thread_id` per the step-16.5 rule, bumps `state.iter`, and stamps `updated_at` — atomically (tmp+rename).
+        - stdout success `{ok:true, iter, last_known_plan_hash, findings_history_len, codex_thread_id, codex_thread_id_changed, lock_refreshed, updated_at}`.
+        - `{ok:false, reason:"iter_already_committed"}` (exit 0) → the iteration was already committed (e.g. a retried call); treat as already-done, do NOT retry.
+        - `{ok:false, reason:"iter_out_of_sequence"}` (exit 0) → state/iter drift; ABORT and show state.
+        - `{ok:false, reason:"lock_refresh_failed"}` (exit 0) → someone took over the lock; ABORT.
+        - Exit 2 → malformed input (skill bug); ABORT and dump the JSON.
     - **If quiet=false**: Print `[N/max] Applied {k} fixes (+{added}/-{removed} lines), deferred {d}. Starting iter {N+1}.`
-23. **Increment iter**, loop.
+23. **Loop.** (`state.iter` was already bumped by `commit-iter.mjs` in step 22.)
 
 # Phase D — Final Check (after loop break)
 
@@ -184,15 +192,15 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     | status | Opus runs when `final_check === "always"`? |
     |---|---|
     | `converged`, `converged-lenient`, `converged-with-polish` | YES (full mode) |
-    | `manual-required`, `stuck`, `regressed`, `max-iter-reached`, `oscillating`, `off-plan-target`, `external-modification`, `build-failed`, `aborted-by-user`, `final-check-malformed`, `final-recheck-error`, `final-recheck-malformed` | NO |
+    | `manual-required`, `stuck`, `regressed`, `max-iter-reached`, `oscillating`, `external-modification`, `build-failed`, `aborted-by-user`, `final-check-malformed`, `final-recheck-error`, `final-recheck-malformed` | NO |
 
 25. _(Auto-gate keyword triggers — removed in v0.2; see [references/final-check.md](references/final-check.md) for historical detail.)_
-26. **Run final check**: spawn `plan-tango:plan-final-checker` with `{plan_path, repo_root, repo_evidence_available, mode}`. Receive raw text output. Pipe through `parse-codex-verdict.mjs --from-text` via Bash. If parser returns `verdict=MALFORMED` → ONE retry of the subagent with reminder "Your last response did not start with ALLOW: or BLOCK:. Repeat with correct format". If retry MALFORMED → BREAK status=`final-check-malformed`, show raw output.
+26. **Run final check**: spawn `plan-tango:plan-final-checker` with `{plan_path, repo_root, mode}`. Receive raw text output. Pipe through `parse-codex-verdict.mjs --from-text` via Bash. If parser returns `verdict=MALFORMED` → ONE retry of the subagent with reminder "Your last response did not start with ALLOW: or BLOCK:. Repeat with correct format". If retry MALFORMED → BREAK status=`final-check-malformed`, show raw output.
 27. _(Diagnostic mode — removed in v0.2.)_ Pre-gate (step 24) makes non-converged statuses ineligible regardless of settings.
 28. **Full mode** (converged-*):
     - **28a (clean)**: `verdict == ALLOW` AND findings empty → BREAK status=`converged-final`.
     - **28a-polish (Opus polish-only)**: `verdict == BLOCK` AND `findings.length > 0` AND `count(critical) + count(major) === 0` → BREAK status=`converged-final`. **No corrective iter.**
-      1. Run dry-run classify on Opus findings via `apply-fixes.mjs`. Cross-check `invariant_summary.off_plan_blocking` — if true, BREAK status=`off-plan-target` per step 22 protocol; do NOT write polish_advisory.
+      1. Run dry-run classify on Opus findings via `apply-fixes.mjs`.
       2. Build `opus_advisory = [...advisory_plan]`.
       3. Set `state.polish_only_terminal = true`. Merge `opus_advisory` into `state.polish_advisory` (append + dedupe by hash).
       4. Append ledger `iteration_kind="final-check-advisory"`, one row per opus_advisory entry: `{hash, severity, action: "advisory", note: "opus_polish_only"}`.
@@ -201,8 +209,8 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
       1. Snapshot via `snapshot.mjs --iter final-fix`.
       2. Dry-run classify on Opus findings.
       3. If `manual` or critical/major `deferred` → BREAK status=`manual-required-after-final`.
-      4. Reuse off-plan invariant from step 22 (check `requested_file_path !== null`). Failures → BREAK status=`off-plan-target` (ledger `iteration_kind="final-fix"`, `action="off_plan_blocked"`).
-      5. Apply fixes (same as step 22 apply); append ledger with `iteration_kind="final-fix"`. Update last_known_plan_hash.
+      4. _(Off-plan check removed in 0.7.0 — Edits always target the plan file.)_
+      5. Apply fixes (same as step 22 apply); append ledger with `iteration_kind="final-fix"`. Recompute last_known_plan_hash (reuse `commit-iter.mjs` if you also want the atomic state bump, or write the hash directly — the final-fix iteration is outside the normal iter counter).
       6. ONE Codex re-review: call `run-codex-review.mjs` again with fresh params.
          - ALLOW → BREAK status=`converged-final`.
          - BLOCK → BREAK status=`final-check-divergence` (Opus and Codex disagree). Show both finding sets. Ask user to resolve.
@@ -219,7 +227,7 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
     - **§1** — one-line header, user's chat language ("Plan-converge done." / "Plan-converge завершён.").
     - **§2** — markdown-code-fenced stats block (status, iter count, Codex/Opus call counts, MALFORMED retries, polish flags, plan size delta, ledger/state paths). Always rendered.
     - **§3** — convergence table (per-iter verdict + severity counts). Render only when `state.settings.verbose_report === true`.
-    - **§4** — "What Codex caught and fixed", numbered list. Source: ledger.json entries with `action ∈ {applied, deferred, manual, off_plan_blocked}`. By severity (critical → major → minor → nit), one line: `N. **{severity}** — {short title}.` Cap at ~12; "…and {K} more (see ledger)" suffix when over.
+    - **§4** — "What Codex caught and fixed", numbered list. Source: ledger.json entries with `action ∈ {applied, deferred, manual}`. By severity (critical → major → minor → nit), one line: `N. **{severity}** — {short title}.` Cap at ~12; "…and {K} more (see ledger)" suffix when over.
     - **§5** — 1-3 sentence convergence narrative. Render only when `verbose_report === true`.
     - **§6** — polish advisory list. Render only when `state.polish_only_terminal === true` AND `state.polish_advisory.length > 0`.
 
@@ -250,12 +258,12 @@ For each iteration `N` (`state.iter` is the count of *completed* iterations, sta
 <critical_invariants>
 The orchestrator must enforce these during the run. Script-enforced and informational invariants (sandbox, subagent-no-Edit, style rules) live in [references/invariants.md](references/invariants.md).
 
-- **Off-plan invariant** (steps 22, 28b): every Edit is preceded by an `edit_plan[i].requested_file_path !== null` check. The `file_path` field itself is always `plan_path` by classifier construction — do NOT confuse the two.
+- **Plan-only invariant** (canonical; referenced by step 22): Edits target the plan file only — `edit_plan[].file_path` is always `plan_path` by classifier construction. Mention-based off-plan detection was removed in 0.7.0 (field data across sessions: 14 flagged, 14 false positives, 0 true), so `apply-fixes.mjs` now always reports `requested_file_path:null` and the constant `invariant_summary` `{all_in_plan:true, off_plan_count:0, off_plan_blocking:false}`. No pre-Edit off-plan check runs anywhere.
 - **Thread invariant**: in `thread_mode=continue` (default), iter 1 opens a Codex thread (saved as `state.codex_thread_id`); iters 2..N call `codex exec resume <id>` AND inject the `<reset_iteration>` block to limit anchor bias. In `thread_mode=fresh` every iteration opens a new thread. On lost-session error the wrapper auto-fallbacks to fresh and reports `fallback_to_fresh:true`; orchestrator unconditionally overwrites `state.codex_thread_id` (step 16.5).
 - **Lock invariant** (Phase A step 2 init.mjs → Phase E step 30): exactly one lock per slug for the run's lifetime. `--resume` re-acquires (state remembers slug; session_id is regenerated each invocation). Release is gated on `lock_acquired === true`. `init.mjs` releases internally if a step AFTER lock-acquire fails; race-fallback (cleanup itself fails) returns `lock_acquired:true` for orchestrator to retry release in Phase E.
 - **Integrity invariant** (step 10b): before every iteration, `sha256(plan)` MUST equal `state.last_known_plan_hash`. Mismatch = external modification = abort the cycle.
 - **Resume-safety invariant** (enforced by `init.mjs`): `--resume` MUST NOT use the `--newest` fallback. Resume requires explicit slug/path or active plan in system prompt — init returns `abort_reason: resume_no_plan` otherwise.
-- **Max-iter hard cap invariant**: `state.settings.max_iter` MUST NOT exceed 12 — neither via initial `--max-iter` nor via the continue-prompt at step 21h.
+- **Max-iter hard cap invariant**: `state.settings.max_iter` MUST NOT exceed 12 — neither via initial `--max-iter` nor via the continue-prompt at step 21 (max-iter-reached).
 - **Severity-aware invariant** (step 21 a2): when `severity_aware=true` (default), a BLOCK with zero critical+major is TERMINAL, NOT a corrective trigger. Polish findings persist to `state.polish_advisory` (sourced from `apply-fixes.mjs` `advisory_plan[]`, deduped, includes manual-classified) and render in Phase E §6 — never auto-applied. Status branches on `lenient`: true → `converged-lenient`, false → `converged-with-polish`. Step 21 (a2) is the single termination point under this mode; legacy step 21 (d) is unreachable.
 </critical_invariants>
 
