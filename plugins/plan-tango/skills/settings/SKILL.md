@@ -62,7 +62,7 @@ Save flag `config_exists` for Step 4 (diff-or-create branch).
 4. `thread_mode` — options: `continue`, `fresh`.
 
 **Batch 2 (3 questions):**
-5. `final_check` — options: `never`, `always`. (Deprecated `auto` and `force` are accepted by the loader but auto-migrated with a warning — wizard never writes them.)
+5. `final_check` — options: `never`, `always`. (The old `auto` / `force` values were removed in 0.7.0 — the loader hard-errors on them; the wizard only ever writes `never` / `always`.)
 6. `quiet` — options: `false (verbose)`, `true (Phase E only)`.
 7. `severity_aware` — options (binary, labels ≤25 chars): label `true`, description `Stop on polish-only BLOCK (minor/nit-only — no extra round). Default; usually what you want.`. Label `false`, description `Legacy: always run a corrective iter on any BLOCK, even minor-only.`.
 
@@ -109,7 +109,7 @@ const newConfig = {
   effort: <answer>,                  // string in schema enum
   max_iter: <answer>,                // integer 1..12
   thread_mode: <answer>,             // "continue" | "fresh"
-  final_check: <answer>,             // "never" | "always" (wizard never writes deprecated "auto" / "force")
+  final_check: <answer>,             // "never" | "always" (old "auto" / "force" removed in 0.7.0 — wizard never writes them)
   service_tier: <answer>,            // null | "fast" | "flex"
   lenient: <preserved>,              // from current merged.lenient (default false) — advanced, no wizard question (only meaningful when severity_aware=false; with default severity_aware=true it only toggles the status label)
   quiet: <answer>,                   // boolean

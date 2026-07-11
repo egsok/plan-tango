@@ -13,6 +13,7 @@ Path: `~/.claude/plans/{slug}-tango.state.json`. One file per slug. Updated afte
   "original_plan_hash": "<sha256>",
   "last_known_plan_hash": "<sha256>",
   "last_verdict": null,
+  "updated_at": "<iso-8601>",
   "findings_history": [[], [], []],
   "settings": {
     "model": null,
@@ -33,7 +34,6 @@ Path: `~/.claude/plans/{slug}-tango.state.json`. One file per slug. Updated afte
     "...": "..."
   },
   "repo_root": "<absolute path>",
-  "repo_evidence_available": true,
   "codex_thread_id": null,
   "codex_version": "codex-cli 0.125.0",
   "polish_only_terminal": false,
@@ -42,8 +42,9 @@ Path: `~/.claude/plans/{slug}-tango.state.json`. One file per slug. Updated afte
 ```
 
 Field notes:
-- `iter` — count of *completed* iterations. Increments AFTER apply phase succeeds.
-- `findings_history` — rolling window of last three iters' finding-hash sets (oldest first). Used for oscillation/stuck detection in Phase C step 21 e/f.
+- `iter` — count of *completed* iterations. Bumped by `commit-iter.mjs` AFTER the apply phase succeeds.
+- `updated_at` — ISO-8601 timestamp stamped by `commit-iter.mjs` on every commit. Diagnostic.
+- `findings_history` — rolling window of the last `history_window` (default 3) iters' finding-hash sets (oldest first). Pushed by `commit-iter.mjs` after apply; read by `evaluate-stop.mjs` (prior iters only) for oscillation/stuck detection.
 - `settings` — populated by `load-config.mjs` (Phase B step 8.5). Orchestrator-only keys live here, NOT in `iter{N}.settings.json`.
 - `settings_sources` — per-key origin: `"cli" | "config" | "default"`. Diagnostic only.
 - `codex_thread_id` — non-null only after iter 1 in `thread_mode=continue`. Reset on `fallback_to_fresh`.
@@ -57,7 +58,6 @@ Path: `~/.claude/plans/{slug}-tango.workspace/iter{N}.params.json`. Built by `pr
 {
   "prompt_file":              "<workspace>/iter{N}.prompt.md",
   "repo_root":                "<repo_root>",
-  "repo_evidence_available":  true,
   "iter":                     1,
   "slug":                     "<slug>",
   "output_last_message_file": "<workspace>/iter{N}.last-message.txt",
@@ -116,9 +116,8 @@ Path: `~/.claude/plans/{slug}-tango.ledger.json`. Append-only per-iteration entr
         {
           "hash":                "<finding-hash>",
           "severity":            "critical",
-          "action":              "applied | deferred | manual | off_plan_blocked | advisory | build_script_failed | error",
+          "action":              "applied | deferred | manual | advisory | build_script_failed | error",
           "note":                "<optional>",
-          "requested_file_path": "<optional>",
           "suggested_fix":       "<optional>",
           "edit_summary":        "<optional, when action=applied>"
         }
@@ -130,6 +129,87 @@ Path: `~/.claude/plans/{slug}-tango.ledger.json`. Append-only per-iteration entr
 ```
 
 `iteration_kind` values: `normal`, `final-fix`, `final-check-advisory`. Phase E §4 ("What Codex caught") pulls from `iterations[*].entries` filtered by action.
+
+## apply-fixes.mjs output (classifier, consumed in Phase C step 20/22)
+
+`apply-fixes.mjs` is a pure classifier. Piped `{plan_path, findings}` on stdin, it returns:
+
+```json
+{
+  "classified":       [ { "hash": "...", "severity": "...", "classification": "auto | deferred | manual", "file_path": "<plan_path>", "location_hint": "...", "title": "...", "problem": "...", "suggested_fix": "...", "requested_file_path": null } ],
+  "edit_plan":        [ { "hash": "...", "severity": "...", "file_path": "<plan_path>", "location_hint": "...", "suggested_fix": "...", "requested_file_path": null } ],
+  "ledger_template":  [ ... ],
+  "advisory_plan":    [ ... ],
+  "invariant_summary": { "all_in_plan": true, "off_plan_count": 0, "off_plan_blocking": false }
+}
+```
+
+- `invariant_summary` is a **constant** — off-plan detection was removed in 0.7.0. `requested_file_path` is retained for shape-compat but is always `null`; the `off_plan_blocked` ledger action no longer exists.
+- `edit_plan[i].file_path` is always `plan_path` by construction (the orchestrator's Edits target only the plan file).
+
+**findingHash** — the `hash` on each finding is `sha1` of the normalized string `"<severity> :: <title>"` (fallback when title is empty: normalized `problem[:80]`). Stable across re-phrasings of the same defect, which is what makes `findings_history` set-comparisons (oscillation/stuck) meaningful.
+
+## commit-iter.mjs (deterministic post-iteration bookkeeping, Phase C step 22)
+
+Reads JSON on stdin, writes state atomically (tmp + `rename`), emits a summary on stdout. Replaces the orchestrator's former hand-rolled state/lock updates. Does NOT touch the ledger.
+
+```json
+// stdin
+{
+  "state_path":       "<abs>",          // required
+  "iter":             1,                 // required, 1-based iteration being committed
+  "plan_path":        "<abs>",          // required — last_known_plan_hash recomputed from this
+  "finding_hashes":   ["h1", "h2"],      // this iter's finding-hash set (default []);
+                                         //   alt: "findings": [{ "hash": "h" } | "h", ...]
+  "verdict":          "BLOCK",           // optional -> state.last_verdict
+  "codex_thread_id":  "<uuid>",          // optional, persisted per the step-16.5 rule
+  "fallback_to_fresh": false,            // optional, forces thread-id overwrite
+  "lock":             { "slug": "...", "session_id": "..." },  // optional -> refresh lease
+  "history_window":   3                  // optional, default 3
+}
+
+// stdout (success)
+{
+  "ok": true,
+  "iter": 1,
+  "last_known_plan_hash": "<sha256>",
+  "findings_history_len": 3,
+  "codex_thread_id": "<uuid|null>",
+  "codex_thread_id_changed": false,
+  "lock_refreshed": true,
+  "updated_at": "<iso-8601>"
+}
+```
+
+- **Order**: refresh lock FIRST (session mismatch aborts without committing) → recompute `last_known_plan_hash` → push `findings_history` (trim to `history_window`) → persist `codex_thread_id` (fallback overwrite / first-thread set / else unchanged) → bump `state.iter` → stamp `updated_at`.
+- **Idempotency**: requires `state.iter === iter - 1`. Semantic refusals return `{ok:false, reason}` with **exit 0**: `iter_already_committed`, `iter_out_of_sequence`, `lock_refresh_failed`, `state_write_failed`. On `iter_already_committed` treat the iteration as already committed and do NOT retry.
+- **Exit 2** only on malformed input (`stdin_empty`, `stdin_not_json`, `missing_state_path`, `missing_iter`, `missing_plan_path`, `state_unreadable`, `state_invalid_json`, `plan_unreadable`).
+
+## evaluate-stop.mjs (deterministic stop-condition evaluation, Phase C step 21)
+
+Reads JSON on stdin, writes ONE decision on stdout, exit 0. Pure function over the run state — replaces the LLM computing severity counts and set-diffs.
+
+```json
+// stdin
+{
+  "verdict":       "ALLOW" | "BLOCK",    // required (this iter's verdict)
+  "findings":      [ { "severity": "critical|major|minor|nit", ... } ],
+  "classified":    [ { "classification": "auto|deferred|manual", "severity": "...", "hash": "..." } ],
+  "settings":      { "severity_aware": true, "lenient": false, "max_iter": 6 },
+  "current_iter":  3,                     // required, 1-based number of THIS iteration
+  "history":       [ ["h1","h2"], ["h3"] ], // findings_history of PRIOR iters, oldest first, NOT incl. current
+  "prev_severity_counts": { "critical": 0, "major": 1, "minor": 0, "nit": 0 },
+  "fresh_thread_fallback": false
+}
+
+// stdout
+{ "ok": true, "action": "continue" | "break", "status": "<status>", "reason": "<code>", "human_note": "<string|null>" }
+```
+
+- Statuses: `converged`, `converged-with-polish`, `converged-lenient`, `manual-required`, `oscillating`, `stuck`, `regressed`, `max-iter-reached`, `continue`.
+- Branch priority: a (clean converge) → a2 (severity-aware polish-only) → b (manual variant) → c (deferred blocking) → d (lenient) → e (oscillation) → f (stuck) → g (regression) → h (max-iter) → continue. Off-plan branches are gone.
+- Regression (g) is suppressed → `continue` with `reason:"regression_suppressed_fresh_thread"` when `fresh_thread_fallback` is true.
+- **Exit 2** only on malformed input (`stdin_empty`, `stdin_not_json`, `invalid_verdict`, `invalid_current_iter`).
 
 ## verdict shape (run-codex-review.mjs output, consumed in Phase C step 16)
 

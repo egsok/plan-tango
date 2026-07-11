@@ -25,6 +25,8 @@ The very first non-empty line MUST match this regex:
 
 Anything else → parser returns `verdict: "MALFORMED", reason: "no_verdict_line"`.
 
+> **Parser leniency (0.7.0):** the reviewer should still emit the verdict as the first line, but `parse-codex-verdict.mjs` is tolerant — it scans the first 5 non-empty lines for the verdict and strips markdown decoration (bold, backticks). Finding headers likewise tolerate `N)`, bullet markers, and bold around the `[SEVERITY: …]` prefix. Producing the exact format above is still the contract; the leniency only absorbs cosmetic drift.
+
 ## Findings list (only when BLOCK)
 
 Each finding follows this exact structure:

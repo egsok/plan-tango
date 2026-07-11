@@ -26,7 +26,7 @@ v0.1 also auto-ran Opus when convergence happened in ≤2 iterations on a plan w
 
 ### Diagnostic mode for non-converged statuses
 
-v0.1's `--force-final-check` ran Opus in **read-only diagnostic mode** when status was non-converged (`manual-required`, `stuck`, `regressed`, `max-iter-reached`, `oscillating`, `off-plan-target`). The output was advisory only — no corrective iteration followed. Removed because: when status is `manual-required` or `off-plan-target`, the user already has actionable findings from Codex; running Opus produces parallel findings without changing the user's next step (resolve manually, then re-run). The diagnostic mode rarely helped and added a status-table row that complicated Phase D.
+v0.1's `--force-final-check` ran Opus in **read-only diagnostic mode** when status was non-converged (`manual-required`, `stuck`, `regressed`, `max-iter-reached`, `oscillating`). The output was advisory only — no corrective iteration followed. Removed because: when status is `manual-required`, the user already has actionable findings from Codex; running Opus produces parallel findings without changing the user's next step (resolve manually, then re-run). The diagnostic mode rarely helped and added a status-table row that complicated Phase D. (0.7.0 later reintroduced a narrower, opt-in Opus offer specifically at `max-iter-reached` — see below.)
 
 ## What v0.2 kept
 
@@ -42,16 +42,12 @@ Two reasons:
 
 2. **Defaults should be cheap.** A skill that adds 30-60s + Opus tokens by default for marginal benefit on most runs trains users to dread invoking it. Default behavior is now: Codex review loop, no Opus, fast finish. Users opt in when they want the extra layer.
 
-## Migration
+## Alias removal (0.7.0 hard cutover)
 
-| v0.1 input                                | v0.2 behavior                                           |
-|-------------------------------------------|---------------------------------------------------------|
-| no flag, no config                        | `final_check="never"` (skip Opus)                       |
-| `--force-final-check`                     | accepted alias → `final_check="always"`, prints warning |
-| `--no-final-check`                        | accepted alias → `final_check="never"`, prints warning  |
-| config `final_check: "auto"`              | migrated to `"never"`, prints warning                   |
-| config `final_check: "force"`             | migrated to `"always"`, prints warning                  |
-| `--final-check` (canonical)               | `final_check="always"`, no warning                      |
-| `--no-final-check` (canonical disable)    | `final_check="never"`, no warning (will be dropped v0.3) |
+The old `final_check` aliases are gone. `--force-final-check` / `--no-final-check` and config values `auto` / `force` no longer migrate silently — `load-config.mjs` hard-errors naming the canonical replacement (`--final-check`, `never` / `always`). See [advanced-config.md](advanced-config.md#removed-final_check-aliases-hard-cutover) for the exact error strings. The orchestrator never re-inspects raw CLI flags or raw config values — `load-config.mjs` resolves precedence (CLI > config > default) into the single normalized `state.settings.final_check`.
 
-All deprecation warnings render once per run via the `warnings: []` array returned by `load-config.mjs` and printed by SKILL.md step 8.5. The orchestrator never re-inspects raw CLI flags or raw config values — `load-config.mjs` resolves precedence (CLI > config > default) into the single normalized `state.settings.final_check`.
+## Opus offer at `max-iter-reached` (0.7.0)
+
+`max-iter-reached` is not eligible for the Phase D pre-gate (the status table marks it NO). But when a run stops at the cap with findings still open, SKILL.md step 21 offers a one-shot escape hatch: **if `state.settings.final_check !== "always"`, AskUserQuestion whether to run the Opus final-check once on the current plan.** On accept, the orchestrator runs step 26 (`plan-tango:plan-final-checker`, `mode="full"`) and surfaces Opus's verdict as advisory — no corrective iteration.
+
+Rationale: a real session hit the cap with a clean-looking plan that shipped an undetected **major** defect only Opus caught. The default-off `final_check` means those runs would otherwise never get the second pass; the offer puts the choice in the user's hands exactly when it matters most.
