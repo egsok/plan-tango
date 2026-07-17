@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hero.png" alt="plan-tango — Claude and Codex dancing on one plan" width="640">
+  <img src="docs/hero.webp" alt="plan-tango — Claude and Codex dancing on one plan" width="640">
 </p>
 
 <h1 align="center">plan-tango</h1>
@@ -89,6 +89,12 @@ Telegram channel where I post about AI tooling and Claude Code workflows: [@neir
 ## Author
 
 Built by [Egor Sokolov](https://egorsokolov.ru/) — 10 years in product (Sberbank, Rolf, Claustrophobia). Writing and experimenting with AI — mostly Claude Code, Codex, and squeezing more out of dev workflows. Deep-dive on plan-tango (the why and what I learned): [egorsokolov.ru/ai/plan-tango/](https://egorsokolov.ru/ai/plan-tango/).
+
+## Other projects
+
+- [press-1](https://github.com/egsok/press-1) — answer Claude Code's permission prompts with a single keypress, from any window.
+- [klava-nevinovata](https://github.com/egsok/klava-nevinovata) — offline speech-to-text tuned for Russian IT, a personal fork of Handy.
+- [napotom](https://github.com/egsok/napotom) — a desktop video downloader with a queue, a friendly GUI over yt-dlp.
 
 ## License
 
